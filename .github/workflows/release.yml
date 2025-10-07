@@ -46,7 +46,8 @@ jobs:
           cd build/ios/iphoneos
           mkdir Payload
           cp -r Runner.app Payload/
-          zip -r ../../ipa/tally.ipa Payload
+          zip -r ../ipa/tally.ipa Payload
+          cd ../../..
 
       - name: Move IPA to root
         run: mv build/ios/ipa/tally.ipa tally.ipa
