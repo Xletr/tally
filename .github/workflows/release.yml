@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write 
+  contents: write
 
 jobs:
   build:
@@ -31,17 +31,17 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      # Android build
+      # --- Android build ---
       - name: Build unsigned APK
-        run: flutter build apk --release
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Rename APK
         run: mv build/app/outputs/flutter-apk/app-release.apk tally.apk
 
-      # iOS build
+      # --- iOS build ---
       - name: Build unsigned IPA
         run: |
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign --no-tree-shake-icons
           mkdir -p build/ios/ipa
           cd build/ios/iphoneos
           mkdir Payload
@@ -51,6 +51,7 @@ jobs:
       - name: Move IPA to root
         run: mv build/ios/ipa/tally.ipa tally.ipa
 
+      # --- Release upload ---
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
