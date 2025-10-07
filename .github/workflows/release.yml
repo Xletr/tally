@@ -1,0 +1,64 @@
+name: Build & Release Tally
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write 
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Flutter and pub packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ~/.flutter
+          key: ${{ runner.os }}-flutter-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Set up Flutter (latest stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      # Android build
+      - name: Build unsigned APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk tally.apk
+
+      # iOS build
+      - name: Build unsigned IPA
+        run: |
+          flutter build ios --release --no-codesign
+          mkdir -p build/ios/ipa
+          cd build/ios/iphoneos
+          mkdir Payload
+          cp -r Runner.app Payload/
+          zip -r ../../ipa/tally.ipa Payload
+
+      - name: Move IPA to root
+        run: mv build/ios/ipa/tally.ipa tally.ipa
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Tally Latest Build
+          files: |
+            tally.apk
+            tally.ipa
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
