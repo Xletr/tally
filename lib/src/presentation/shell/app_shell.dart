@@ -51,7 +51,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       body: PageView(
         controller: _controller,
         onPageChanged: (value) => setState(() => _index = value),

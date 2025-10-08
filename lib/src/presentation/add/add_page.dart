@@ -95,6 +95,9 @@ class _AddPageState extends ConsumerState<AddPage> {
     }
 
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    final buttonBottomPadding = viewInsets > 0
+        ? 24.0 + math.min(viewInsets, 40.0)
+        : 24.0;
 
     return SafeArea(
       child: Column(
@@ -196,15 +199,8 @@ class _AddPageState extends ConsumerState<AddPage> {
               ),
             ),
           ),
-          AnimatedPadding(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
-            padding: EdgeInsets.fromLTRB(
-              20,
-              8,
-              20,
-              viewInsets > 0 ? viewInsets + 20 : 24,
-            ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, 8, 20, buttonBottomPadding),
             child: FilledButton.icon(
               icon: _isSaving
                   ? const SizedBox(
