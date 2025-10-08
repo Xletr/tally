@@ -43,6 +43,12 @@ final currentBudgetMonthProvider = StreamProvider<BudgetMonth>((ref) async* {
   yield* repository.watchMonth(monthId);
 });
 
+final budgetMonthStreamProvider = StreamProvider.autoDispose
+    .family<BudgetMonth, String>((ref, monthId) {
+      final repository = ref.watch(budgetRepositoryProvider);
+      return repository.watchMonth(monthId);
+    });
+
 final allMonthsProvider = FutureProvider<List<BudgetMonth>>((ref) async {
   final repository = ref.watch(budgetRepositoryProvider);
   ref.watch(currentBudgetMonthProvider);

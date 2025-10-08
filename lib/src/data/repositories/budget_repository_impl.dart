@@ -60,6 +60,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
     final monthId = buildMonthId(normalized);
     final existing = _bootstrap.monthsBox.get(monthId);
     if (existing != null) {
+      await _migrateExistingMonth(existing, settings);
       return _buildMonth(existing);
     }
     await _backfillMissingMonths(normalized, settings);
@@ -171,15 +172,19 @@ class BudgetRepositoryImpl implements BudgetRepository {
     final model = IncomeEntryModel.fromDomain(entry);
     await _bootstrap.incomesBox.put(model.id, model);
     await _touchMonth(entry.monthId);
+    await _propagateRollover(_normalizeMonth(entry.date));
   }
 
   @override
   Future<void> updateIncome(IncomeEntry entry) async {
     final existing = _bootstrap.incomesBox.get(entry.id);
+    final originalDate = existing?.date;
     await addIncome(entry);
     if (existing != null && existing.monthId != entry.monthId) {
       await _touchMonth(existing.monthId);
     }
+    final start = _minMonth(originalDate, entry.date);
+    await _propagateRollover(start);
   }
 
   @override
@@ -188,6 +193,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
     await _bootstrap.incomesBox.delete(id);
     if (existing != null) {
       await _touchMonth(existing.monthId);
+      await _propagateRollover(_normalizeMonth(existing.date));
     }
   }
 
@@ -197,11 +203,13 @@ class BudgetRepositoryImpl implements BudgetRepository {
     final model = ExpenseEntryModel.fromDomain(entry);
     await _bootstrap.expensesBox.put(model.id, model);
     await _touchMonth(entry.monthId);
+    await _propagateRollover(_normalizeMonth(entry.date));
   }
 
   @override
   Future<void> updateExpense(ExpenseEntry entry) async {
     final existing = _bootstrap.expensesBox.get(entry.id);
+    final originalDate = existing?.date;
     await addExpense(entry);
     if (existing != null && existing.monthId != entry.monthId) {
       await _touchMonth(existing.monthId);
@@ -216,6 +224,8 @@ class BudgetRepositoryImpl implements BudgetRepository {
         await template.save();
       }
     }
+    final start = _minMonth(originalDate, entry.date);
+    await _propagateRollover(start);
   }
 
   @override
@@ -224,6 +234,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
     await _bootstrap.expensesBox.delete(id);
     if (existing != null) {
       await _touchMonth(existing.monthId);
+      await _propagateRollover(_normalizeMonth(existing.date));
     }
   }
 
@@ -423,9 +434,9 @@ class BudgetRepositoryImpl implements BudgetRepository {
         0,
         (sum, expense) => sum + expense.amount,
       );
-      final last = related.reduce(
-        (a, b) => a.date.isAfter(b.date) ? a : b,
-      ).date;
+      final last = related
+          .reduce((a, b) => a.date.isAfter(b.date) ? a : b)
+          .date;
 
       summaries.add(
         SubscriptionSummary(
@@ -465,8 +476,8 @@ class BudgetRepositoryImpl implements BudgetRepository {
   List<BudgetMonthModel> _sortedMonthModelsDesc() {
     final models = _bootstrap.monthsBox.values.toList()
       ..sort(
-        (a, b) => DateTime(b.year, b.month)
-            .compareTo(DateTime(a.year, a.month)),
+        (a, b) =>
+            DateTime(b.year, b.month).compareTo(DateTime(a.year, a.month)),
       );
     return models;
   }
@@ -474,8 +485,8 @@ class BudgetRepositoryImpl implements BudgetRepository {
   List<BudgetMonthModel> _sortedMonthModelsAsc() {
     final models = _bootstrap.monthsBox.values.toList()
       ..sort(
-        (a, b) => DateTime(a.year, a.month)
-            .compareTo(DateTime(b.year, b.month)),
+        (a, b) =>
+            DateTime(a.year, a.month).compareTo(DateTime(b.year, b.month)),
       );
     return models;
   }
@@ -490,6 +501,47 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   Future<void> _seedRecurringExpenses(BudgetMonthModel month) async {
     await _rebuildRecurringAggregatesForMonth(month);
+  }
+
+  Future<void> _propagateRollover(DateTime startMonth) async {
+    final normalizedStart = _normalizeMonth(startMonth);
+    final settings = await _settingsRepository.load();
+    var months = _sortedMonthModelsAsc();
+    var index = months.indexWhere(
+      (model) => model.id == buildMonthId(normalizedStart),
+    );
+    if (index == -1) {
+      return;
+    }
+
+    while (index < months.length - 1) {
+      final currentModel = months[index];
+      final currentDomain = await _buildMonth(currentModel);
+      final nextModelId = months[index + 1].id;
+      final nextModel = _bootstrap.monthsBox.get(nextModelId);
+      if (nextModel == null) {
+        break;
+      }
+
+      final shouldCarry =
+          settings.autoRollover && currentDomain.rolloverEnabled;
+      final newRollover = shouldCarry ? currentDomain.remaining : 0.0;
+      if ((nextModel.rolloverAmount - newRollover).abs() > 0.01) {
+        nextModel.rolloverAmount = newRollover;
+        nextModel.updatedAt = _now();
+        await nextModel.save();
+      }
+
+      await _seedAllowanceIncome(nextModel, settings);
+      await _rebuildRecurringAggregatesForMonth(nextModel);
+      await _touchMonth(nextModel.id);
+
+      months = _sortedMonthModelsAsc();
+      index = months.indexWhere((model) => model.id == nextModelId);
+      if (index == -1) {
+        break;
+      }
+    }
   }
 
   Future<BudgetMonth> _ensureMonthWithSettings(
@@ -526,8 +578,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
         ? settings.monthlySavingsGoal
         : max(
             0.0,
-            (inferredAllowance + rolloverAmount) *
-                settings.defaultSavingsRate,
+            (inferredAllowance + rolloverAmount) * settings.defaultSavingsRate,
           );
 
     final now = _now();
@@ -793,6 +844,15 @@ class BudgetRepositoryImpl implements BudgetRepository {
       projectedOverspendPercent:
           (map['projectedOverspendPercent'] as num?)?.toDouble() ?? 0,
     );
+  }
+
+  DateTime _normalizeMonth(DateTime date) => DateTime(date.year, date.month);
+
+  DateTime _minMonth(DateTime? a, DateTime b) {
+    final normalizedB = _normalizeMonth(b);
+    if (a == null) return normalizedB;
+    final normalizedA = _normalizeMonth(a);
+    return normalizedA.isBefore(normalizedB) ? normalizedA : normalizedB;
   }
 }
 

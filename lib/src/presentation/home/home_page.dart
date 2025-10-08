@@ -571,16 +571,19 @@ class _TimelineTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isIncome = entry.type == _TimelineType.income;
+    final isRollover = entry.type == _TimelineType.rollover;
     final isSavings = entry.expense?.category == ExpenseCategory.savings;
-    final amountColor = isIncome
+    final isPositive = entry.amount >= 0;
+    final isIncomeLike =
+        entry.type == _TimelineType.income || (isRollover && isPositive);
+    final amountColor = isRollover
+        ? (isPositive ? colorScheme.primary : colorScheme.error)
+        : isIncomeLike
         ? colorScheme.primary
         : isSavings
         ? colorScheme.tertiary
         : colorScheme.error;
-    final leadingBackground = isIncome
-        ? colorScheme.surfaceContainerHighest
-        : isSavings
+    final leadingBackground = isSavings
         ? colorScheme.tertiaryContainer
         : colorScheme.surfaceContainerHighest;
     final leadingIconColor = amountColor;
@@ -588,12 +591,20 @@ class _TimelineTile extends StatelessWidget {
       fontWeight: FontWeight.w600,
       color: amountColor,
     );
+    final amountPrefix = entry.amount == 0
+        ? ''
+        : isPositive
+        ? '+ '
+        : '- ';
+    final amountText =
+        '$amountPrefix${formatCurrency(entry.amount.abs(), compact: false)}';
+    final tileOnTap = entry.type == _TimelineType.rollover ? null : onEdit;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: ListTile(
-        onTap: onEdit,
-        onLongPress: onEdit,
+        onTap: tileOnTap,
+        onLongPress: tileOnTap,
         tileColor: isSavings
             ? colorScheme.tertiaryContainer.withValues(alpha: 0.25)
             : null,
@@ -603,10 +614,7 @@ class _TimelineTile extends StatelessWidget {
         ),
         title: Text(entry.title, style: theme.textTheme.titleMedium),
         subtitle: Text(entry.subtitle, style: theme.textTheme.bodySmall),
-        trailing: Text(
-          (isIncome ? '+' : '-') + formatCurrency(entry.amount, compact: false),
-          style: amountStyle,
-        ),
+        trailing: Text(amountText, style: amountStyle),
       ),
     );
   }
@@ -652,8 +660,9 @@ class _HistoryButton extends StatelessWidget {
                   Text(
                     'See prior inflows, spending, and rollover history.',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onPrimaryContainer
-                          .withValues(alpha: 0.8),
+                      color: colorScheme.onPrimaryContainer.withValues(
+                        alpha: 0.8,
+                      ),
                     ),
                   ),
                 ],
@@ -671,10 +680,15 @@ class _HistoryButton extends StatelessWidget {
 }
 
 class _HistoryMonthTile extends StatelessWidget {
-  const _HistoryMonthTile({required this.month, required this.isCurrent});
+  const _HistoryMonthTile({
+    required this.month,
+    required this.isCurrent,
+    required this.onTap,
+  });
 
   final BudgetMonth month;
   final bool isCurrent;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -683,81 +697,57 @@ class _HistoryMonthTile extends StatelessWidget {
     final incomeTotal = month.incomeTotal;
     final spentTotal = month.expenseTotal;
     final remaining = month.remaining;
-    final savingsTotal = month.expenses
-        .where((e) => e.category == ExpenseCategory.savings)
-        .fold<double>(0, (sum, e) => sum + e.amount);
-    final subscriptionsTotal = month.expenses
-        .where((e) => e.category == ExpenseCategory.subscriptions)
-        .fold<double>(0, (sum, e) => sum + e.amount);
-    final double rollover =
-        month.rolloverEnabled ? month.rolloverAmount : 0.0;
+    final double rollover = month.rolloverEnabled ? month.rolloverAmount : 0.0;
 
     final stats = <Widget>[
       _HistoryStatChip(label: 'Inflow', value: formatCurrency(incomeTotal)),
+      _HistoryStatChip(label: 'Rollover', value: formatCurrency(rollover)),
       _HistoryStatChip(label: 'Spent', value: formatCurrency(spentTotal)),
       _HistoryStatChip(label: 'Left', value: formatCurrency(remaining)),
     ];
 
-    if (savingsTotal.abs() > 0.01) {
-      stats.add(
-        _HistoryStatChip(label: 'Saved', value: formatCurrency(savingsTotal)),
-      );
-    }
-
-    if (subscriptionsTotal.abs() > 0.01) {
-      stats.add(
-        _HistoryStatChip(label: 'Subs', value: formatCurrency(subscriptionsTotal)),
-      );
-    }
-
-    if (rollover.abs() > 0.01) {
-      stats.add(
-        _HistoryStatChip(label: 'Rollover', value: formatCurrency(rollover)),
-      );
-    }
-
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: colorScheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  formatMonthShort(month.cycleStart),
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                if (isCurrent) ...[
-                  const SizedBox(width: 8),
-                  Chip(
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: colorScheme.secondaryContainer,
-                    label: Text(
-                      'Current',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSecondaryContainer,
-                        fontWeight: FontWeight.w600,
-                      ),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Card(
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        color: colorScheme.surface,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    formatMonthShort(month.cycleStart),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
                   ),
+                  if (isCurrent) ...[
+                    const SizedBox(width: 8),
+                    Chip(
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      backgroundColor: colorScheme.secondaryContainer,
+                      label: Text(
+                        'Current',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSecondaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
                 ],
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: stats,
-            ),
-          ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(spacing: 12, runSpacing: 12, children: stats),
+            ],
+          ),
         ),
       ),
     );
@@ -830,17 +820,26 @@ class _ErrorState extends StatelessWidget {
 
 List<_TimelineEntry> _buildTimeline(BudgetMonth month) {
   final entries = <_TimelineEntry>[];
+  if (month.rolloverEnabled && month.rolloverAmount.abs() > 0.01) {
+    entries.add(_TimelineEntry.rollover(month));
+  }
   for (final income in month.incomes) {
     entries.add(_TimelineEntry.fromIncome(income));
   }
   for (final expense in month.expenses) {
     entries.add(_TimelineEntry.fromExpense(expense));
   }
-  entries.sort((a, b) => b.date.compareTo(a.date));
+  entries.sort((a, b) {
+    final dateCompare = b.date.compareTo(a.date);
+    if (dateCompare != 0) return dateCompare;
+    final priorityCompare = b.sortPriority.compareTo(a.sortPriority);
+    if (priorityCompare != 0) return priorityCompare;
+    return a.title.compareTo(b.title);
+  });
   return entries;
 }
 
-enum _TimelineType { income, expense }
+enum _TimelineType { income, expense, rollover }
 
 class _TimelineEntry {
   _TimelineEntry._({
@@ -850,12 +849,18 @@ class _TimelineEntry {
     required this.amount,
     required this.date,
     required this.icon,
+    required this.sortPriority,
     this.income,
     this.expense,
   });
 
   factory _TimelineEntry.fromIncome(IncomeEntry income) {
-    final title = income.source.isEmpty ? 'Income' : income.source;
+    final isAllowance =
+        income.id.startsWith('allowance-') ||
+        income.source.toLowerCase() == 'monthly inflow';
+    final title = isAllowance
+        ? 'Monthly inflow'
+        : (income.source.isEmpty ? 'Income' : income.source);
     return _TimelineEntry._(
       type: _TimelineType.income,
       title: title,
@@ -863,21 +868,46 @@ class _TimelineEntry {
       amount: income.amount,
       date: income.date,
       icon: Icons.trending_up_rounded,
+      sortPriority: isAllowance ? 300 : 220,
       income: income,
     );
   }
 
   factory _TimelineEntry.fromExpense(ExpenseEntry expense) {
+    final isSubscriptionAggregate =
+        expense.isRecurring &&
+        expense.recurringTemplateId == null &&
+        expense.id.startsWith('recurring-');
+    final title = expense.note?.isNotEmpty == true
+        ? expense.note!
+        : expense.category.label;
+    final iconData = isSubscriptionAggregate
+        ? Icons.subscriptions_outlined
+        : categoryIcon(expense.category);
     return _TimelineEntry._(
       type: _TimelineType.expense,
-      title: expense.note?.isNotEmpty == true
-          ? expense.note!
-          : expense.category.label,
+      title: title,
       subtitle: formatDay(expense.date),
       amount: expense.amount,
       date: expense.date,
-      icon: categoryIcon(expense.category),
+      icon: iconData,
+      sortPriority: isSubscriptionAggregate ? 280 : 200,
       expense: expense,
+    );
+  }
+
+  factory _TimelineEntry.rollover(BudgetMonth month) {
+    final previousMonth = month.cycleStart.subtract(const Duration(days: 1));
+    final label = 'Rollover from ${formatMonthShort(previousMonth)}';
+    final date = DateTime(month.year, month.month, 1);
+    return _TimelineEntry._(
+      type: _TimelineType.rollover,
+      title: label,
+      subtitle: formatDay(date),
+      amount: month.rolloverAmount,
+      date: date,
+      icon: Icons.refresh_rounded,
+      sortPriority: 240,
     );
   }
 
@@ -887,6 +917,7 @@ class _TimelineEntry {
   final double amount;
   final DateTime date;
   final IconData icon;
+  final int sortPriority;
   final IncomeEntry? income;
   final ExpenseEntry? expense;
 }
@@ -981,8 +1012,11 @@ Future<void> _showEditEntry(
                         );
                         if (picked != null) {
                           setState(
-                            () => selectedDate =
-                                clampDate(picked, minDate, maxDate),
+                            () => selectedDate = clampDate(
+                              picked,
+                              minDate,
+                              maxDate,
+                            ),
                           );
                         }
                       },
@@ -1140,8 +1174,11 @@ Future<void> _showEditEntry(
                         );
                         if (picked != null) {
                           setState(
-                            () => selectedDate =
-                                clampDate(picked, minDate, maxDate),
+                            () => selectedDate = clampDate(
+                              picked,
+                              minDate,
+                              maxDate,
+                            ),
                           );
                         }
                       },
@@ -1220,9 +1257,9 @@ Future<void> _showMonthHistory(BuildContext context, WidgetRef ref) async {
   final months = await repository.getAllMonths();
   if (months.length <= 1) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No past months yet.')), 
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No past months yet.')));
     }
     return;
   }
@@ -1270,6 +1307,8 @@ Future<void> _showMonthHistory(BuildContext context, WidgetRef ref) async {
                       return _HistoryMonthTile(
                         month: month,
                         isCurrent: month.id == currentId,
+                        onTap: () =>
+                            _showHistoryMonthDetail(context, ref, month.id),
                       );
                     },
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -1287,6 +1326,108 @@ Future<void> _showMonthHistory(BuildContext context, WidgetRef ref) async {
   if (!modalContext.mounted) {
     return;
   }
+}
+
+Future<void> _showHistoryMonthDetail(
+  BuildContext context,
+  WidgetRef ref,
+  String monthId,
+) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) {
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Consumer(
+            builder: (context, sheetRef, _) {
+              final monthAsync = sheetRef.watch(
+                budgetMonthStreamProvider(monthId),
+              );
+              return monthAsync.when(
+                loading: () => const SizedBox(
+                  height: 240,
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (error, stack) => Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('Could not load month\n$error'),
+                ),
+                data: (month) {
+                  final transactions = _buildTimeline(month);
+                  return SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.75,
+                    child: CustomScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      slivers: [
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                          sliver: SliverToBoxAdapter(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      formatMonthShort(month.cycleStart),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Inflow ${formatCurrency(month.incomeTotal)} · Spent ${formatCurrency(month.expenseTotal)}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                                const Spacer(),
+                                IconButton(
+                                  icon: const Icon(Icons.close),
+                                  onPressed: () => Navigator.of(context).pop(),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          sliver: SliverList.builder(
+                            itemBuilder: (context, index) {
+                              final entry = transactions[index];
+                              return _TimelineTile(
+                                entry: entry,
+                                onEdit: () => _showEditEntry(
+                                  context,
+                                  sheetRef,
+                                  entry,
+                                  month,
+                                ),
+                              );
+                            },
+                            itemCount: transactions.length,
+                          ),
+                        ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 32)),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      );
+    },
+  );
 }
 
 Future<void> _showSettingsSheet(BuildContext context, WidgetRef ref) async {
