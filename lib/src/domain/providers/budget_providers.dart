@@ -43,6 +43,18 @@ final currentBudgetMonthProvider = StreamProvider<BudgetMonth>((ref) async* {
   yield* repository.watchMonth(monthId);
 });
 
+final allMonthsProvider = FutureProvider<List<BudgetMonth>>((ref) async {
+  final repository = ref.watch(budgetRepositoryProvider);
+  ref.watch(currentBudgetMonthProvider);
+  return repository.getAllMonths();
+});
+
+final earliestMonthStartProvider = FutureProvider<DateTime>((ref) async {
+  final repository = ref.watch(budgetRepositoryProvider);
+  ref.watch(currentBudgetMonthProvider);
+  return repository.getEarliestMonthStart();
+});
+
 final incomeListProvider = StreamProvider<List<IncomeEntry>>((ref) {
   final repository = ref.watch(budgetRepositoryProvider);
   final monthId = ref.watch(currentMonthIdProvider);

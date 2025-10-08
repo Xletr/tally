@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/services/service_providers.dart';
 import '../../domain/entities/budget_insights.dart';
@@ -76,6 +77,11 @@ class HomePage extends ConsumerWidget {
           data: (value) => value,
           orElse: () => null,
         );
+        final historyAsync = ref.watch(allMonthsProvider);
+        final hasHistory = historyAsync.maybeWhen(
+          data: (months) => months.length > 1,
+          orElse: () => false,
+        );
         if (settings == null) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -86,7 +92,9 @@ class HomePage extends ConsumerWidget {
           settings: settings,
           transactions: transactions,
           onOpenSettings: () => _showSettingsSheet(context, ref),
-          onEditEntry: (entry) => _showEditEntry(context, ref, entry),
+          onEditEntry: (entry) => _showEditEntry(context, ref, entry, month),
+          hasHistory: hasHistory,
+          onViewHistory: () => _showMonthHistory(context, ref),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -103,6 +111,8 @@ class _HomeScrollView extends StatelessWidget {
     required this.settings,
     required this.onOpenSettings,
     required this.onEditEntry,
+    required this.hasHistory,
+    required this.onViewHistory,
     this.insights,
   });
 
@@ -113,6 +123,8 @@ class _HomeScrollView extends StatelessWidget {
   final BudgetInsights? insights;
   final VoidCallback onOpenSettings;
   final void Function(_TimelineEntry entry) onEditEntry;
+  final bool hasHistory;
+  final VoidCallback onViewHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -170,6 +182,13 @@ class _HomeScrollView extends StatelessWidget {
             itemCount: transactions.length,
           ),
         ),
+        if (hasHistory)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            sliver: SliverToBoxAdapter(
+              child: _HistoryButton(onTap: onViewHistory),
+            ),
+          ),
         const SliverToBoxAdapter(child: SizedBox(height: 32)),
       ],
     );
@@ -593,6 +612,198 @@ class _TimelineTile extends StatelessWidget {
   }
 }
 
+class _HistoryButton extends StatelessWidget {
+  const _HistoryButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: colorScheme.primaryContainer,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.calendar_month_rounded,
+              color: colorScheme.onPrimaryContainer,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Past months',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'See prior inflows, spending, and rollover history.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onPrimaryContainer
+                          .withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: colorScheme.onPrimaryContainer,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryMonthTile extends StatelessWidget {
+  const _HistoryMonthTile({required this.month, required this.isCurrent});
+
+  final BudgetMonth month;
+  final bool isCurrent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final incomeTotal = month.incomeTotal;
+    final spentTotal = month.expenseTotal;
+    final remaining = month.remaining;
+    final savingsTotal = month.expenses
+        .where((e) => e.category == ExpenseCategory.savings)
+        .fold<double>(0, (sum, e) => sum + e.amount);
+    final subscriptionsTotal = month.expenses
+        .where((e) => e.category == ExpenseCategory.subscriptions)
+        .fold<double>(0, (sum, e) => sum + e.amount);
+    final double rollover =
+        month.rolloverEnabled ? month.rolloverAmount : 0.0;
+
+    final stats = <Widget>[
+      _HistoryStatChip(label: 'Inflow', value: formatCurrency(incomeTotal)),
+      _HistoryStatChip(label: 'Spent', value: formatCurrency(spentTotal)),
+      _HistoryStatChip(label: 'Left', value: formatCurrency(remaining)),
+    ];
+
+    if (savingsTotal.abs() > 0.01) {
+      stats.add(
+        _HistoryStatChip(label: 'Saved', value: formatCurrency(savingsTotal)),
+      );
+    }
+
+    if (subscriptionsTotal.abs() > 0.01) {
+      stats.add(
+        _HistoryStatChip(label: 'Subs', value: formatCurrency(subscriptionsTotal)),
+      );
+    }
+
+    if (rollover.abs() > 0.01) {
+      stats.add(
+        _HistoryStatChip(label: 'Rollover', value: formatCurrency(rollover)),
+      );
+    }
+
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  formatMonthShort(month.cycleStart),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (isCurrent) ...[
+                  const SizedBox(width: 8),
+                  Chip(
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor: colorScheme.secondaryContainer,
+                    label: Text(
+                      'Current',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: stats,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryStatChip extends StatelessWidget {
+  const _HistoryStatChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: colorScheme.surfaceContainerHigh,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.75),
+              letterSpacing: 0.2,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.error});
 
@@ -684,9 +895,13 @@ Future<void> _showEditEntry(
   BuildContext context,
   WidgetRef ref,
   _TimelineEntry entry,
+  BudgetMonth currentMonth,
 ) async {
   final repository = ref.read(budgetRepositoryProvider);
   final messenger = ScaffoldMessenger.of(context);
+  final earliestStart = await repository.getEarliestMonthStart();
+  final minDate = DateTime(earliestStart.year, earliestStart.month, 1);
+  final maxDate = currentMonth.cycleEnd;
 
   if (entry.type == _TimelineType.income && entry.income != null) {
     final income = entry.income!;
@@ -695,10 +910,12 @@ Future<void> _showEditEntry(
     );
     final sourceController = TextEditingController(text: income.source);
     final noteController = TextEditingController(text: income.note ?? '');
-    DateTime selectedDate = income.date;
+    DateTime selectedDate = clampDate(income.date, minDate, maxDate);
 
+    final modalContext = context;
+    // ignore: use_build_context_synchronously
     final shouldSave = await showModalBottomSheet<bool>(
-      context: context,
+      context: modalContext, // ignore: use_build_context_synchronously
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
@@ -759,11 +976,14 @@ Future<void> _showEditEntry(
                         final picked = await showDatePicker(
                           context: context,
                           initialDate: selectedDate,
-                          firstDate: DateTime(selectedDate.year - 1),
-                          lastDate: DateTime(selectedDate.year + 1),
+                          firstDate: minDate,
+                          lastDate: maxDate,
                         );
                         if (picked != null) {
-                          setState(() => selectedDate = picked);
+                          setState(
+                            () => selectedDate =
+                                clampDate(picked, minDate, maxDate),
+                          );
                         }
                       },
                       child: const Text('Change'),
@@ -802,6 +1022,10 @@ Future<void> _showEditEntry(
       ),
     );
 
+    if (!modalContext.mounted) {
+      return;
+    }
+
     if (shouldSave == true) {
       final parsedAmount =
           double.tryParse(amountController.text) ?? income.amount;
@@ -812,8 +1036,10 @@ Future<void> _showEditEntry(
             ? null
             : noteController.text.trim(),
         date: selectedDate,
+        monthId: monthIdFromDate(selectedDate),
         updatedAt: DateTime.now(),
       );
+      await repository.ensureMonth(selectedDate);
       await repository.updateIncome(updated);
       messenger.showSnackBar(const SnackBar(content: Text('Income updated')));
     }
@@ -828,10 +1054,12 @@ Future<void> _showEditEntry(
     );
     final noteController = TextEditingController(text: expense.note ?? '');
     ExpenseCategory category = expense.category;
-    DateTime selectedDate = expense.date;
+    DateTime selectedDate = clampDate(expense.date, minDate, maxDate);
 
+    final modalContext = context;
+    // ignore: use_build_context_synchronously
     final shouldSave = await showModalBottomSheet<bool>(
-      context: context,
+      context: modalContext, // ignore: use_build_context_synchronously
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {
@@ -907,11 +1135,14 @@ Future<void> _showEditEntry(
                         final picked = await showDatePicker(
                           context: context,
                           initialDate: selectedDate,
-                          firstDate: DateTime(selectedDate.year - 1),
-                          lastDate: DateTime(selectedDate.year + 1),
+                          firstDate: minDate,
+                          lastDate: maxDate,
                         );
                         if (picked != null) {
-                          setState(() => selectedDate = picked);
+                          setState(
+                            () => selectedDate =
+                                clampDate(picked, minDate, maxDate),
+                          );
                         }
                       },
                       child: const Text('Change'),
@@ -958,6 +1189,10 @@ Future<void> _showEditEntry(
       ),
     );
 
+    if (!modalContext.mounted) {
+      return;
+    }
+
     if (shouldSave == true) {
       final parsedAmount =
           double.tryParse(amountController.text) ?? expense.amount;
@@ -968,13 +1203,89 @@ Future<void> _showEditEntry(
             ? null
             : noteController.text.trim(),
         date: selectedDate,
+        monthId: monthIdFromDate(selectedDate),
         updatedAt: DateTime.now(),
       );
+      await repository.ensureMonth(selectedDate);
       await repository.updateExpense(updated);
       messenger.showSnackBar(const SnackBar(content: Text('Expense updated')));
     }
 
     // controllers live only within this method scope; avoid disposing to prevent rebuild issues
+  }
+}
+
+Future<void> _showMonthHistory(BuildContext context, WidgetRef ref) async {
+  final repository = ref.read(budgetRepositoryProvider);
+  final months = await repository.getAllMonths();
+  if (months.length <= 1) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No past months yet.')), 
+      );
+    }
+    return;
+  }
+
+  final currentId = ref.read(currentMonthIdProvider);
+
+  final modalContext = context;
+
+  // ignore: use_build_context_synchronously
+  await showModalBottomSheet<void>(
+    context: modalContext, // ignore: use_build_context_synchronously
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) {
+      final theme = Theme.of(context);
+      return SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.7,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Past months',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.separated(
+                    physics: const BouncingScrollPhysics(),
+                    itemBuilder: (context, index) {
+                      final month = months[index];
+                      return _HistoryMonthTile(
+                        month: month,
+                        isCurrent: month.id == currentId,
+                      );
+                    },
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemCount: months.length,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  if (!modalContext.mounted) {
+    return;
   }
 }
 

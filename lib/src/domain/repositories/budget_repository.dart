@@ -8,9 +8,18 @@ import '../entities/subscription_summary.dart';
 abstract class BudgetRepository {
   Future<BudgetMonth> ensureCurrentMonth({bool allowRollover = true});
 
+  Future<BudgetMonth> ensureMonth(
+    DateTime date, {
+    bool allowRollover = true,
+  });
+
   Stream<BudgetMonth> watchMonth(String monthId);
 
   Future<BudgetMonth> getMonth(String monthId);
+
+  Future<List<BudgetMonth>> getAllMonths();
+
+  Future<DateTime> getEarliestMonthStart();
 
   Future<List<BudgetMonth>> getRecentMonths({int limit = 6});
 

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
+import '../../domain/entities/budget_month.dart';
 import '../../domain/entities/expense_category.dart';
 import '../../domain/entities/expense_entry.dart';
 import '../../domain/entities/income_entry.dart';
@@ -40,6 +43,19 @@ class _AddPageState extends ConsumerState<AddPage> {
 
   @override
   Widget build(BuildContext context) {
+    final currentMonthAsync = ref.watch(currentBudgetMonthProvider);
+    final currentMonth = currentMonthAsync.maybeWhen(
+      data: (value) => value,
+      orElse: () => null,
+    );
+    final earliestAsync = ref.watch(earliestMonthStartProvider);
+    final earliestStart = earliestAsync.maybeWhen(
+      data: (value) => value,
+      orElse: () => currentMonth?.cycleStart ?? DateTime.now(),
+    );
+    final minDate = DateTime(earliestStart.year, earliestStart.month, 1);
+    final maxDate = currentMonth?.cycleEnd ?? DateTime.now();
+
     final categoryPresets = ref.watch(categoryQuickPresetsProvider);
     final expenseSuggestions = ref.watch(expenseSuggestionsProvider);
     final incomeSuggestions = ref.watch(incomeSuggestionsProvider);
@@ -129,15 +145,21 @@ class _AddPageState extends ConsumerState<AddPage> {
               _DatePickerTile(
                 selectedDate: _selectedDate,
                 onPressed: () async {
-                  final now = DateTime.now();
+                  final initialDate = clampDate(
+                    _selectedDate,
+                    minDate,
+                    maxDate,
+                  );
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: _selectedDate,
-                    firstDate: DateTime(now.year - 1),
-                    lastDate: DateTime(now.year + 1),
+                    initialDate: initialDate,
+                    firstDate: minDate,
+                    lastDate: maxDate,
                   );
                   if (picked != null) {
-                    setState(() => _selectedDate = picked);
+                    setState(
+                      () => _selectedDate = clampDate(picked, minDate, maxDate),
+                    );
                   }
                 },
               ),
@@ -186,7 +208,28 @@ class _AddPageState extends ConsumerState<AddPage> {
     final note = _noteController.text.trim();
     setState(() => _isSaving = true);
     final repo = ref.read(budgetRepositoryProvider);
-    final monthId = ref.read(currentMonthIdProvider);
+    final BudgetMonth currentMonth = ref.read(currentBudgetMonthProvider).maybeWhen(
+          data: (value) => value,
+          orElse: () => null,
+        ) ??
+        await ref.read(currentBudgetMonthProvider.future);
+    final earliestStart = await ref.read(earliestMonthStartProvider.future);
+    final minDate = DateTime(earliestStart.year, earliestStart.month, 1);
+    final maxDate = currentMonth.cycleEnd;
+
+    if (_selectedDate.isBefore(minDate) || _selectedDate.isAfter(maxDate)) {
+      setState(() => _isSaving = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Pick a date between ${DateFormat.yMMMd().format(minDate)} and ${DateFormat.yMMMd().format(maxDate)}',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final monthId = monthIdFromDate(_selectedDate);
     final now = DateTime.now();
     final expenseCategories = ExpenseCategory.values
         .where((category) => category != ExpenseCategory.subscriptions)
@@ -196,6 +239,7 @@ class _AddPageState extends ConsumerState<AddPage> {
         : expenseCategories.first;
 
     try {
+      await repo.ensureMonth(_selectedDate);
       if (_type == _EntryType.inflow) {
         final source = _sourceController.text.trim();
         final entry = IncomeEntry(
@@ -230,7 +274,7 @@ class _AddPageState extends ConsumerState<AddPage> {
         _amountController.clear();
         _noteController.clear();
         _sourceController.clear();
-        _selectedDate = DateTime.now();
+        _selectedDate = clampDate(DateTime.now(), minDate, maxDate);
       });
     } catch (err) {
       if (!mounted) return;

@@ -51,6 +51,26 @@ class BudgetRepositoryImpl implements BudgetRepository {
   }
 
   @override
+  Future<BudgetMonth> ensureMonth(
+    DateTime date, {
+    bool allowRollover = true,
+  }) async {
+    final normalized = DateTime(date.year, date.month);
+    final settings = await _settingsRepository.load();
+    final monthId = buildMonthId(normalized);
+    final existing = _bootstrap.monthsBox.get(monthId);
+    if (existing != null) {
+      return _buildMonth(existing);
+    }
+    await _backfillMissingMonths(normalized, settings);
+    return _ensureMonthWithSettings(
+      normalized,
+      settings,
+      allowRollover: allowRollover,
+    );
+  }
+
+  @override
   Future<BudgetMonth> getMonth(String monthId) async {
     final model = _bootstrap.monthsBox.get(monthId);
     if (model == null) {
@@ -118,14 +138,25 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   @override
   Future<List<BudgetMonth>> getRecentMonths({int limit = 6}) async {
-    final models = _bootstrap.monthsBox.values.toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final sliced = models.take(limit).toList();
-    final results = <BudgetMonth>[];
-    for (final model in sliced) {
-      results.add(await _buildMonth(model));
+    final models = _sortedMonthModelsDesc().take(limit).toList();
+    return _buildMonths(models);
+  }
+
+  @override
+  Future<List<BudgetMonth>> getAllMonths() async {
+    final models = _sortedMonthModelsDesc();
+    return _buildMonths(models);
+  }
+
+  @override
+  Future<DateTime> getEarliestMonthStart() async {
+    if (_bootstrap.monthsBox.isEmpty) {
+      final now = _now();
+      return DateTime(now.year, now.month, 1);
     }
-    return results;
+    final models = _sortedMonthModelsAsc();
+    final first = models.first;
+    return DateTime(first.year, first.month, 1);
   }
 
   @override
@@ -136,6 +167,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   @override
   Future<void> addIncome(IncomeEntry entry) async {
+    await ensureMonth(entry.date);
     final model = IncomeEntryModel.fromDomain(entry);
     await _bootstrap.incomesBox.put(model.id, model);
     await _touchMonth(entry.monthId);
@@ -143,7 +175,11 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   @override
   Future<void> updateIncome(IncomeEntry entry) async {
+    final existing = _bootstrap.incomesBox.get(entry.id);
     await addIncome(entry);
+    if (existing != null && existing.monthId != entry.monthId) {
+      await _touchMonth(existing.monthId);
+    }
   }
 
   @override
@@ -157,6 +193,7 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   @override
   Future<void> addExpense(ExpenseEntry entry) async {
+    await ensureMonth(entry.date);
     final model = ExpenseEntryModel.fromDomain(entry);
     await _bootstrap.expensesBox.put(model.id, model);
     await _touchMonth(entry.monthId);
@@ -164,7 +201,11 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   @override
   Future<void> updateExpense(ExpenseEntry entry) async {
+    final existing = _bootstrap.expensesBox.get(entry.id);
     await addExpense(entry);
+    if (existing != null && existing.monthId != entry.monthId) {
+      await _touchMonth(existing.monthId);
+    }
     if (entry.isRecurring && entry.recurringTemplateId != null) {
       final template = _bootstrap.recurringBox.get(entry.recurringTemplateId!);
       if (template != null) {
@@ -421,6 +462,32 @@ class BudgetRepositoryImpl implements BudgetRepository {
     );
   }
 
+  List<BudgetMonthModel> _sortedMonthModelsDesc() {
+    final models = _bootstrap.monthsBox.values.toList()
+      ..sort(
+        (a, b) => DateTime(b.year, b.month)
+            .compareTo(DateTime(a.year, a.month)),
+      );
+    return models;
+  }
+
+  List<BudgetMonthModel> _sortedMonthModelsAsc() {
+    final models = _bootstrap.monthsBox.values.toList()
+      ..sort(
+        (a, b) => DateTime(a.year, a.month)
+            .compareTo(DateTime(b.year, b.month)),
+      );
+    return models;
+  }
+
+  Future<List<BudgetMonth>> _buildMonths(List<BudgetMonthModel> models) async {
+    final results = <BudgetMonth>[];
+    for (final model in models) {
+      results.add(await _buildMonth(model));
+    }
+    return results;
+  }
+
   Future<void> _seedRecurringExpenses(BudgetMonthModel month) async {
     await _rebuildRecurringAggregatesForMonth(month);
   }
@@ -493,18 +560,18 @@ class BudgetRepositoryImpl implements BudgetRepository {
     }
 
     final normalizedTarget = DateTime(targetMonth.year, targetMonth.month);
-    final months = _bootstrap.monthsBox.values.toList()
-      ..sort(
-        (a, b) => DateTime(a.year, a.month)
-            .compareTo(DateTime(b.year, b.month)),
-      );
+    final months = _sortedMonthModelsAsc();
+    final priorMonths = months.where((model) {
+      final date = DateTime(model.year, model.month);
+      return date.isBefore(normalizedTarget);
+    }).toList();
 
-    var cursor = DateTime(months.last.year, months.last.month);
-    if (!cursor.isBefore(normalizedTarget)) {
+    if (priorMonths.isEmpty) {
       return;
     }
 
-    while (true) {
+    var cursor = DateTime(priorMonths.last.year, priorMonths.last.month);
+    while (cursor.isBefore(normalizedTarget)) {
       cursor = DateTime(cursor.year, cursor.month + 1);
       if (!cursor.isBefore(normalizedTarget)) {
         break;
