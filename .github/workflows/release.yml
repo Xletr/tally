@@ -68,14 +68,14 @@ jobs:
         run: mv build/ios/ipa/tally.ipa tally.ipa
 
       # --- Release upload ---
-      - name: Create or update GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Tally Latest Build
+          tag_name: v${{ github.run_number }}
+          name: "tally build #${{ github.run_number }}"
+          body: ${{ github.event.head_commit.message }}
           files: |
             tally.apk
             tally.ipa
-          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
