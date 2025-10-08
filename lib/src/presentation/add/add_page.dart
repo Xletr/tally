@@ -98,7 +98,18 @@ class _AddPageState extends ConsumerState<AddPage> {
 
     return SafeArea(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: _TypeSegmentedControl(
+              type: _type,
+              onChanged: (value) {
+                FocusScope.of(context).unfocus();
+                setState(() => _type = value);
+              },
+            ),
+          ),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -106,29 +117,22 @@ class _AddPageState extends ConsumerState<AddPage> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final contentMinHeight = constraints.hasBoundedHeight
-                      ? math.max(constraints.maxHeight - 160, 0.0)
+                      ? math.max(constraints.maxHeight - 140, 0.0)
                       : 0.0;
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    physics: const BouncingScrollPhysics(),
                     child: ConstrainedBox(
                       constraints: BoxConstraints(minHeight: contentMinHeight),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _TypeSegmentedControl(
-                            type: _type,
-                            onChanged: (value) {
-                              FocusScope.of(context).unfocus();
-                              setState(() => _type = value);
-                            },
-                          ),
-                          const SizedBox(height: 20),
                           _AmountField(
                             controller: _amountController,
                             presets: amountPresets,
                             onPresetTap: (value) => setState(
-                              () => _amountController.text =
-                                  value.toStringAsFixed(0),
+                              () => _amountController.text = value
+                                  .toStringAsFixed(0),
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -145,8 +149,8 @@ class _AddPageState extends ConsumerState<AddPage> {
                               controller: _sourceController,
                               suggestions: incomeSuggestions,
                               onSuggestionTap: (value) => setState(
-                                () => _amountController.text =
-                                    value.toStringAsFixed(0),
+                                () => _amountController.text = value
+                                    .toStringAsFixed(0),
                               ),
                             )
                           else
@@ -174,13 +178,16 @@ class _AddPageState extends ConsumerState<AddPage> {
                               );
                               if (picked != null) {
                                 setState(
-                                  () => _selectedDate =
-                                      clampDate(picked, minDate, maxDate),
+                                  () => _selectedDate = clampDate(
+                                    picked,
+                                    minDate,
+                                    maxDate,
+                                  ),
                                 );
                               }
                             },
                           ),
-                          const SizedBox(height: 160),
+                          const SizedBox(height: 120),
                         ],
                       ),
                     ),
@@ -192,8 +199,12 @@ class _AddPageState extends ConsumerState<AddPage> {
           AnimatedPadding(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
-            padding:
-                EdgeInsets.fromLTRB(20, 8, 20, 12 + math.max(viewInsets, 0)),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              viewInsets > 0 ? viewInsets + 20 : 24,
+            ),
             child: FilledButton.icon(
               icon: _isSaving
                   ? const SizedBox(
@@ -202,8 +213,7 @@ class _AddPageState extends ConsumerState<AddPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(switch (_type) {
-                      _EntryType.inflow =>
-                        Icons.account_balance_wallet_rounded,
+                      _EntryType.inflow => Icons.account_balance_wallet_rounded,
                       _EntryType.expense =>
                         Icons.shopping_cart_checkout_rounded,
                       _EntryType.savings => Icons.savings_rounded,
@@ -237,10 +247,10 @@ class _AddPageState extends ConsumerState<AddPage> {
     final note = _noteController.text.trim();
     setState(() => _isSaving = true);
     final repo = ref.read(budgetRepositoryProvider);
-    final BudgetMonth currentMonth = ref.read(currentBudgetMonthProvider).maybeWhen(
-          data: (value) => value,
-          orElse: () => null,
-        ) ??
+    final BudgetMonth currentMonth =
+        ref
+            .read(currentBudgetMonthProvider)
+            .maybeWhen(data: (value) => value, orElse: () => null) ??
         await ref.read(currentBudgetMonthProvider.future);
     final earliestStart = await ref.read(earliestMonthStartProvider.future);
     final minDate = DateTime(earliestStart.year, earliestStart.month, 1);
@@ -392,6 +402,7 @@ class _AmountField extends StatelessWidget {
             prefixIcon: Icon(Icons.attach_money_rounded),
             labelText: 'Amount',
           ),
+          scrollPadding: const EdgeInsets.only(bottom: 220),
         ),
         if (presets.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -567,6 +578,7 @@ class _NoteField extends StatelessWidget {
         prefixIcon: Icon(Icons.edit_note_rounded),
         labelText: 'Note (optional)',
       ),
+      scrollPadding: const EdgeInsets.only(bottom: 220),
     );
   }
 }
@@ -580,17 +592,43 @@ class _DatePickerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.calendar_today_rounded),
-      title: const Text('Date'),
-      subtitle: Text(formatDay(selectedDate)),
-      trailing: IconButton(
-        icon: const Icon(Icons.edit_calendar_rounded),
-        onPressed: onPressed,
+    final colorScheme = theme.colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.calendar_today_rounded),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Date', style: theme.textTheme.labelMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    formatDay(selectedDate),
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ],
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.edit_calendar_rounded),
+                onPressed: onPressed,
+              ),
+            ],
+          ),
+        ),
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      tileColor: theme.colorScheme.surfaceContainerHighest,
     );
   }
 }
