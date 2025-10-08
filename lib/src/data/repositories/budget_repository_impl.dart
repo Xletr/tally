@@ -392,21 +392,38 @@ class BudgetRepositoryImpl implements BudgetRepository {
   @override
   Future<List<SubscriptionSummary>> getSubscriptionSummaries() async {
     final templates = _bootstrap.recurringBox.values.toList();
-    final expenses = _bootstrap.expensesBox.values
-        .where((e) => e.recurringTemplateId != null)
-        .toList();
+    final expensesByTemplate = <String, List<ExpenseEntryModel>>{};
+    for (final expense in _bootstrap.expensesBox.values) {
+      final templateId = expense.recurringTemplateId;
+      if (templateId == null) continue;
+      expensesByTemplate
+          .putIfAbsent(templateId, () => <ExpenseEntryModel>[])
+          .add(expense);
+    }
+
     final summaries = <SubscriptionSummary>[];
     for (final template in templates) {
-      final related = expenses.where(
-        (expense) => expense.recurringTemplateId == template.id,
-      );
+      final related = expensesByTemplate[template.id];
+      if (related == null || related.isEmpty) {
+        summaries.add(
+          SubscriptionSummary(
+            template: template.toDomain(),
+            lifetimeSpent: 0,
+            chargeCount: 0,
+            lastChargedAt: null,
+          ),
+        );
+        continue;
+      }
+
       final total = related.fold<double>(
         0,
         (sum, expense) => sum + expense.amount,
       );
-      final last = related.isEmpty
-          ? null
-          : related.reduce((a, b) => a.date.isAfter(b.date) ? a : b).date;
+      final last = related.reduce(
+        (a, b) => a.date.isAfter(b.date) ? a : b,
+      ).date;
+
       summaries.add(
         SubscriptionSummary(
           template: template.toDomain(),
