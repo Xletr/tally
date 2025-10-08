@@ -38,54 +38,16 @@ class BudgetRepositoryImpl implements BudgetRepository {
   @override
   Future<BudgetMonth> ensureCurrentMonth({bool allowRollover = true}) async {
     final today = _now();
-    final monthId = buildMonthId(DateTime(today.year, today.month));
-    final existing = _bootstrap.monthsBox.get(monthId);
+    final targetMonth = DateTime(today.year, today.month);
     final settings = await _settingsRepository.load();
-    if (existing != null) {
-      await _migrateExistingMonth(existing, settings);
-      return _buildMonth(existing);
-    }
 
-    final previousMonthId = buildMonthId(DateTime(today.year, today.month - 1));
-    double rolloverAmount = 0;
-    double inferredAllowance = settings.defaultMonthlyAllowance;
-    if (_bootstrap.monthsBox.containsKey(previousMonthId)) {
-      final previous = await getMonth(previousMonthId);
-      inferredAllowance = previous.baseAllowance;
-      if (allowRollover && settings.autoRollover && previous.rolloverEnabled) {
-        rolloverAmount = previous.remaining;
-      }
-    }
+    await _backfillMissingMonths(targetMonth, settings);
 
-    if (inferredAllowance <= 0) {
-      inferredAllowance = settings.defaultMonthlyAllowance;
-    }
-
-    final savingsTarget = settings.monthlySavingsGoal > 0
-        ? settings.monthlySavingsGoal
-        : max(
-            0.0,
-            (inferredAllowance + rolloverAmount) * settings.defaultSavingsRate,
-          );
-
-    final model = BudgetMonthModel(
-      id: monthId,
-      year: today.year,
-      month: today.month,
-      baseAllowance: 0,
-      rolloverAmount: rolloverAmount,
-      rolloverEnabled: settings.autoRollover,
-      savingsTarget: savingsTarget,
-      createdAt: today,
-      updatedAt: today,
-      cycleLockDate: null,
+    return _ensureMonthWithSettings(
+      targetMonth,
+      settings,
+      allowRollover: allowRollover,
     );
-    await _bootstrap.monthsBox.put(monthId, model);
-
-    await _seedRecurringExpenses(model);
-    await _seedAllowanceIncome(model, settings);
-
-    return _buildMonth(model);
   }
 
   @override
@@ -461,6 +423,94 @@ class BudgetRepositoryImpl implements BudgetRepository {
 
   Future<void> _seedRecurringExpenses(BudgetMonthModel month) async {
     await _rebuildRecurringAggregatesForMonth(month);
+  }
+
+  Future<BudgetMonth> _ensureMonthWithSettings(
+    DateTime monthDate,
+    BudgetSettings settings, {
+    bool allowRollover = true,
+  }) async {
+    final normalized = DateTime(monthDate.year, monthDate.month);
+    final monthId = buildMonthId(normalized);
+    final existing = _bootstrap.monthsBox.get(monthId);
+    if (existing != null) {
+      await _migrateExistingMonth(existing, settings);
+      return _buildMonth(existing);
+    }
+
+    final previousMonthId = buildMonthId(
+      DateTime(normalized.year, normalized.month - 1),
+    );
+    double rolloverAmount = 0;
+    double inferredAllowance = settings.defaultMonthlyAllowance;
+    if (_bootstrap.monthsBox.containsKey(previousMonthId)) {
+      final previous = await getMonth(previousMonthId);
+      inferredAllowance = previous.baseAllowance;
+      if (allowRollover && settings.autoRollover && previous.rolloverEnabled) {
+        rolloverAmount = previous.remaining;
+      }
+    }
+
+    if (inferredAllowance <= 0) {
+      inferredAllowance = settings.defaultMonthlyAllowance;
+    }
+
+    final savingsTarget = settings.monthlySavingsGoal > 0
+        ? settings.monthlySavingsGoal
+        : max(
+            0.0,
+            (inferredAllowance + rolloverAmount) *
+                settings.defaultSavingsRate,
+          );
+
+    final now = _now();
+    final model = BudgetMonthModel(
+      id: monthId,
+      year: normalized.year,
+      month: normalized.month,
+      baseAllowance: 0,
+      rolloverAmount: rolloverAmount,
+      rolloverEnabled: settings.autoRollover,
+      savingsTarget: savingsTarget,
+      createdAt: now,
+      updatedAt: now,
+      cycleLockDate: null,
+    );
+    await _bootstrap.monthsBox.put(monthId, model);
+
+    await _seedAllowanceIncome(model, settings);
+    await _seedRecurringExpenses(model);
+
+    return _buildMonth(model);
+  }
+
+  Future<void> _backfillMissingMonths(
+    DateTime targetMonth,
+    BudgetSettings settings,
+  ) async {
+    if (_bootstrap.monthsBox.isEmpty) {
+      return;
+    }
+
+    final normalizedTarget = DateTime(targetMonth.year, targetMonth.month);
+    final months = _bootstrap.monthsBox.values.toList()
+      ..sort(
+        (a, b) => DateTime(a.year, a.month)
+            .compareTo(DateTime(b.year, b.month)),
+      );
+
+    var cursor = DateTime(months.last.year, months.last.month);
+    if (!cursor.isBefore(normalizedTarget)) {
+      return;
+    }
+
+    while (true) {
+      cursor = DateTime(cursor.year, cursor.month + 1);
+      if (!cursor.isBefore(normalizedTarget)) {
+        break;
+      }
+      await _ensureMonthWithSettings(cursor, settings);
+    }
   }
 
   Future<void> _migrateExistingMonth(
