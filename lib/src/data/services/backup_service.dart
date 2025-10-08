@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../domain/repositories/budget_repository.dart';
@@ -20,14 +22,49 @@ class BackupService {
   Future<File?> exportData() async {
     final data = await _budgetRepository.exportData();
     final json = const JsonEncoder.withIndent('  ').convert(data);
-
-    var directoryPath = await FilePicker.platform.getDirectoryPath();
-    directoryPath ??= (await getApplicationDocumentsDirectory()).path;
+    final bytes = Uint8List.fromList(utf8.encode(json));
 
     final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-');
-    final filePath = '$directoryPath/tally-backup-$timestamp.json';
+    final defaultName = 'tally-backup-$timestamp.json';
+
+    final docsDir = await getApplicationDocumentsDirectory();
+    final filePath = '${docsDir.path}/$defaultName';
     final file = File(filePath);
-    await file.writeAsString(json);
+    await file.writeAsBytes(bytes, flush: true);
+
+    String? destination;
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        destination = await FlutterFileDialog.saveFile(
+          params: SaveFileDialogParams(
+            sourceFilePath: file.path,
+            fileName: defaultName,
+            mimeTypesFilter: const ['application/json'],
+          ),
+        );
+      } catch (_) {
+        destination = null;
+      }
+    } else {
+      try {
+        destination = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Tally backup',
+          fileName: defaultName,
+          type: FileType.custom,
+          allowedExtensions: const ['json'],
+          bytes: bytes,
+        );
+      } catch (_) {
+        destination = null;
+      }
+    }
+
+    if (destination == null || destination.isEmpty) {
+      try {
+        await file.delete();
+      } catch (_) {}
+      return null;
+    }
 
     final settings = await _settingsRepository.load();
     await _settingsRepository.save(

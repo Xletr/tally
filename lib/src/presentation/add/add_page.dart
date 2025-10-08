@@ -77,6 +77,7 @@ class _AddPageState extends ConsumerState<AddPage> {
     }
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
       child: SafeArea(
         child: Padding(
@@ -86,7 +87,10 @@ class _AddPageState extends ConsumerState<AddPage> {
             children: [
               _TypeSegmentedControl(
                 type: _type,
-                onChanged: (value) => setState(() => _type = value),
+                onChanged: (value) {
+                  FocusScope.of(context).unfocus();
+                  setState(() => _type = value);
+                },
               ),
               const SizedBox(height: 20),
               _AmountField(
@@ -272,17 +276,17 @@ class _TypeSegmentedControl extends StatelessWidget {
       segments: [
         ButtonSegment(
           value: _EntryType.expense,
-          label: const Text('Expense'),
+          label: const Text('Spend', softWrap: false),
           icon: const Icon(Icons.remove_circle_outline),
         ),
         ButtonSegment(
           value: _EntryType.inflow,
-          label: const Text('Inflow'),
+          label: const Text('Inflow', softWrap: false),
           icon: const Icon(Icons.add_circle_outline),
         ),
         ButtonSegment(
           value: _EntryType.savings,
-          label: const Text('Savings'),
+          label: const Text('Save', softWrap: false),
           icon: const Icon(Icons.savings_rounded),
         ),
       ],
@@ -466,7 +470,9 @@ class _NoteField extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      maxLines: 2,
+      maxLines: 1,
+      textInputAction: TextInputAction.done,
+      onEditingComplete: () => FocusScope.of(context).unfocus(),
       decoration: const InputDecoration(
         prefixIcon: Icon(Icons.edit_note_rounded),
         labelText: 'Note (optional)',

@@ -194,7 +194,7 @@ class _BalanceCard extends StatelessWidget {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final colorScheme = theme.colorScheme;
-    final monthLabel = formatMonth(month.cycleStart);
+    final monthLabel = formatMonthShort(month.cycleStart);
 
     final progress = metrics.utilization;
     final normalizedProgress = progress < 0
@@ -1223,7 +1223,7 @@ class _SettingsSheet extends ConsumerWidget {
                         SnackBar(
                           content: Text(
                             file != null
-                                ? 'Exported to ${file.path}'
+                                ? 'Backup saved. Local copy: ${file.path}'
                                 : 'Export cancelled',
                           ),
                         ),

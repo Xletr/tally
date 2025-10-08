@@ -74,7 +74,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           NavigationDestination(
             icon: Icon(Icons.subscriptions_outlined),
             selectedIcon: Icon(Icons.subscriptions_rounded),
-            label: 'Subscriptions',
+            label: 'Subs',
           ),
           NavigationDestination(
             icon: Icon(Icons.analytics_outlined),

@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/bootstrap/bootstrap.dart';
@@ -77,16 +78,21 @@ final expenseSuggestionsProvider = Provider<Map<ExpenseCategory, List<double>>>(
     final monthAsync = ref.watch(currentBudgetMonthProvider);
     return monthAsync.maybeWhen(
       data: (month) {
-        final grouped = <ExpenseCategory, List<double>>{};
-        for (final expense in month.expenses) {
-          grouped
-              .putIfAbsent(expense.category, () => <double>[])
-              .add(expense.amount);
-        }
+        final presets = ref.read(categoryQuickPresetsProvider);
+        final grouped = month.expenses.groupListsBy(
+          (expense) => expense.category,
+        );
         final result = <ExpenseCategory, List<double>>{};
-        grouped.forEach((category, amounts) {
-          final top = amounts.map((value) => value.abs()).toList()..sort();
-          result[category] = top.reversed.take(5).toList().reversed.toList();
+        grouped.forEach((category, entries) {
+          final presetValues = presets[category] ?? const <double>[];
+          final sorted = entries.toList()
+            ..sort((a, b) => b.date.compareTo(a.date));
+          final recent = sorted.firstWhereOrNull(
+            (entry) => !presetValues.contains(entry.amount),
+          );
+          if (recent != null) {
+            result[category] = [recent.amount.abs()];
+          }
         });
         return result;
       },
@@ -99,9 +105,12 @@ final incomeSuggestionsProvider = Provider<List<double>>((ref) {
   final monthAsync = ref.watch(currentBudgetMonthProvider);
   return monthAsync.maybeWhen(
     data: (month) {
-      final amounts =
-          month.incomes.map((income) => income.amount.abs()).toList()..sort();
-      return amounts.reversed.take(5).toList().reversed.toList();
+      final sorted = month.incomes.toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+      if (sorted.isEmpty) {
+        return const <double>[20, 50, 100];
+      }
+      return [sorted.first.amount.abs()];
     },
     orElse: () => const <double>[20, 50, 100],
   );
