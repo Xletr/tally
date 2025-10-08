@@ -1,8 +1,7 @@
-name: Build & Release Tally
+name: build & release
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Flutter and pub packages
+      - name: cache flutter and pub packages
         uses: actions/cache@v4
         with:
           path: |
@@ -23,23 +22,23 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-flutter-
 
-      - name: Set up Flutter (latest stable)
+      - name: setup flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
 
-      - name: Get dependencies
+      - name: dependencies
         run: flutter pub get
 
       # --- Android build ---
-      - name: Build unsigned APK
+      - name: Build APK (unsigned)
         run: flutter build apk --release --no-tree-shake-icons
 
       - name: Rename APK
         run: mv build/app/outputs/flutter-apk/app-release.apk tally.apk
 
       # --- iOS build ---
-      - name: Build unsigned IPA
+      - name: Build IPA (unsigned)
         run: |
           flutter build ios --release --no-codesign --no-tree-shake-icons
           mkdir -p build/ios/ipa
@@ -52,8 +51,7 @@ jobs:
       - name: Move IPA to root
         run: mv build/ios/ipa/tally.ipa tally.ipa
 
-      # --- Release upload ---
-      - name: Create or update GitHub Release
+      - name: release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
