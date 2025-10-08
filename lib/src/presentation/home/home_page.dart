@@ -417,10 +417,13 @@ class _SavingsInlineProgress extends StatelessWidget {
       children: [
         Text('Savings progress', style: theme.textTheme.labelMedium),
         const SizedBox(height: 6),
-        LinearProgressIndicator(
-          value: progress,
-          minHeight: 6,
-          backgroundColor: colorScheme.surfaceContainerHighest,
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 8,
+            backgroundColor: colorScheme.surfaceContainerHighest,
+          ),
         ),
         const SizedBox(height: 6),
         Text(
@@ -573,7 +576,8 @@ class _TimelineTile extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final isRollover = entry.type == _TimelineType.rollover;
     final isSavings = entry.expense?.category == ExpenseCategory.savings;
-    final isPositive = entry.amount >= 0;
+    final isExpense = entry.type == _TimelineType.expense;
+    final isPositive = isExpense ? false : entry.amount >= 0;
     final isIncomeLike =
         entry.type == _TimelineType.income || (isRollover && isPositive);
     final amountColor = isRollover
@@ -868,7 +872,7 @@ class _TimelineEntry {
       amount: income.amount,
       date: income.date,
       icon: Icons.trending_up_rounded,
-      sortPriority: isAllowance ? 300 : 220,
+      sortPriority: isAllowance ? 320 : 260,
       income: income,
     );
   }
@@ -907,7 +911,7 @@ class _TimelineEntry {
       amount: month.rolloverAmount,
       date: date,
       icon: Icons.refresh_rounded,
-      sortPriority: 240,
+      sortPriority: 400,
     );
   }
 

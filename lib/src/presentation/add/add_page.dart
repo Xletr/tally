@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -92,105 +94,132 @@ class _AddPageState extends ConsumerState<AddPage> {
         break;
     }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => FocusScope.of(context).unfocus(),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _TypeSegmentedControl(
-                type: _type,
-                onChanged: (value) {
-                  FocusScope.of(context).unfocus();
-                  setState(() => _type = value);
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+
+    return SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final contentMinHeight = constraints.hasBoundedHeight
+                      ? math.max(constraints.maxHeight - 160, 0.0)
+                      : 0.0;
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: contentMinHeight),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _TypeSegmentedControl(
+                            type: _type,
+                            onChanged: (value) {
+                              FocusScope.of(context).unfocus();
+                              setState(() => _type = value);
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                          _AmountField(
+                            controller: _amountController,
+                            presets: amountPresets,
+                            onPresetTap: (value) => setState(
+                              () => _amountController.text =
+                                  value.toStringAsFixed(0),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          if (_type == _EntryType.expense)
+                            _ExpenseExtras(
+                              category: effectiveCategory,
+                              categories: expenseCategories,
+                              icons: quickEntryIcons,
+                              onCategoryTapped: (category) =>
+                                  setState(() => _selectedCategory = category),
+                            )
+                          else if (_type == _EntryType.inflow)
+                            _IncomeExtras(
+                              controller: _sourceController,
+                              suggestions: incomeSuggestions,
+                              onSuggestionTap: (value) => setState(
+                                () => _amountController.text =
+                                    value.toStringAsFixed(0),
+                              ),
+                            )
+                          else
+                            _SavingsExtras(
+                              icon:
+                                  quickEntryIcons[ExpenseCategory.savings] ??
+                                  categoryIcon(ExpenseCategory.savings),
+                            ),
+                          const SizedBox(height: 20),
+                          _NoteField(controller: _noteController),
+                          const SizedBox(height: 20),
+                          _DatePickerTile(
+                            selectedDate: _selectedDate,
+                            onPressed: () async {
+                              final initialDate = clampDate(
+                                _selectedDate,
+                                minDate,
+                                maxDate,
+                              );
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: initialDate,
+                                firstDate: minDate,
+                                lastDate: maxDate,
+                              );
+                              if (picked != null) {
+                                setState(
+                                  () => _selectedDate =
+                                      clampDate(picked, minDate, maxDate),
+                                );
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 160),
+                        ],
+                      ),
+                    ),
+                  );
                 },
               ),
-              const SizedBox(height: 20),
-              _AmountField(
-                controller: _amountController,
-                presets: amountPresets,
-                onPresetTap: (value) => setState(
-                  () => _amountController.text = value.toStringAsFixed(0),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (_type == _EntryType.expense)
-                _ExpenseExtras(
-                  category: effectiveCategory,
-                  categories: expenseCategories,
-                  icons: quickEntryIcons,
-                  onCategoryTapped: (category) =>
-                      setState(() => _selectedCategory = category),
-                )
-              else if (_type == _EntryType.inflow)
-                _IncomeExtras(
-                  controller: _sourceController,
-                  suggestions: incomeSuggestions,
-                  onSuggestionTap: (value) => setState(
-                    () => _amountController.text = value.toStringAsFixed(0),
-                  ),
-                )
-              else
-                _SavingsExtras(
-                  icon:
-                      quickEntryIcons[ExpenseCategory.savings] ??
-                      categoryIcon(ExpenseCategory.savings),
-                ),
-              const SizedBox(height: 16),
-              _NoteField(controller: _noteController),
-              const SizedBox(height: 12),
-              _DatePickerTile(
-                selectedDate: _selectedDate,
-                onPressed: () async {
-                  final initialDate = clampDate(
-                    _selectedDate,
-                    minDate,
-                    maxDate,
-                  );
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: initialDate,
-                    firstDate: minDate,
-                    lastDate: maxDate,
-                  );
-                  if (picked != null) {
-                    setState(
-                      () => _selectedDate = clampDate(picked, minDate, maxDate),
-                    );
-                  }
-                },
-              ),
-              const Spacer(),
-              FilledButton.icon(
-                icon: _isSaving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(switch (_type) {
-                        _EntryType.inflow =>
-                          Icons.account_balance_wallet_rounded,
-                        _EntryType.expense =>
-                          Icons.shopping_cart_checkout_rounded,
-                        _EntryType.savings => Icons.savings_rounded,
-                      }),
-                onPressed: _isSaving ? null : () => _submit(context),
-                label: Text(switch (_type) {
-                  _EntryType.inflow => 'Add inflow',
-                  _EntryType.expense => 'Add expense',
-                  _EntryType.savings => 'Add savings',
-                }),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(54),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          AnimatedPadding(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            padding:
+                EdgeInsets.fromLTRB(20, 8, 20, 12 + math.max(viewInsets, 0)),
+            child: FilledButton.icon(
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(switch (_type) {
+                      _EntryType.inflow =>
+                        Icons.account_balance_wallet_rounded,
+                      _EntryType.expense =>
+                        Icons.shopping_cart_checkout_rounded,
+                      _EntryType.savings => Icons.savings_rounded,
+                    }),
+              onPressed: _isSaving ? null : () => _submit(context),
+              label: Text(switch (_type) {
+                _EntryType.inflow => 'Add inflow',
+                _EntryType.expense => 'Add expense',
+                _EntryType.savings => 'Add savings',
+              }),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -364,18 +393,25 @@ class _AmountField extends StatelessWidget {
             labelText: 'Amount',
           ),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          children: presets
-              .map(
-                (value) => ActionChip(
+        if (presets.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemBuilder: (context, index) {
+                final value = presets[index];
+                return ActionChip(
                   label: Text(formatCurrency(value, compact: false)),
                   onPressed: () => onPresetTap(value),
-                ),
-              )
-              .toList(),
-        ),
+                );
+              },
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemCount: presets.length,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -407,18 +443,23 @@ class _ExpenseExtras extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          children: categories
-              .map(
-                (value) => ChoiceChip(
-                  label: Text(value.label),
-                  avatar: Icon(icons[value] ?? categoryIcon(value), size: 18),
-                  selected: value == category,
-                  onSelected: (_) => onCategoryTapped(value),
-                ),
-              )
-              .toList(),
+        SizedBox(
+          height: 44,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemBuilder: (context, index) {
+              final value = categories[index];
+              return ChoiceChip(
+                label: Text(value.label),
+                avatar: Icon(icons[value] ?? categoryIcon(value), size: 18),
+                selected: value == category,
+                onSelected: (_) => onCategoryTapped(value),
+              );
+            },
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemCount: categories.length,
+          ),
         ),
       ],
     );
@@ -450,16 +491,21 @@ class _IncomeExtras extends StatelessWidget {
         ),
         if (suggestions.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            children: suggestions
-                .map(
-                  (value) => ActionChip(
-                    label: Text(formatCurrency(value)),
-                    onPressed: () => onSuggestionTap(value),
-                  ),
-                )
-                .toList(),
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemBuilder: (context, index) {
+                final value = suggestions[index];
+                return ActionChip(
+                  label: Text(formatCurrency(value)),
+                  onPressed: () => onSuggestionTap(value),
+                );
+              },
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemCount: suggestions.length,
+            ),
           ),
         ],
       ],
