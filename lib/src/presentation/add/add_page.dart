@@ -25,10 +25,19 @@ class AddPage extends ConsumerStatefulWidget {
 }
 
 class _AddPageState extends ConsumerState<AddPage> {
+  static const double _ctaHeight = 52;
+  static const double _ctaSpacing = 16;
+
   final _amountController = TextEditingController();
   final _sourceController = TextEditingController();
   final _noteController = TextEditingController();
   final Uuid _uuid = const Uuid();
+  final GlobalKey _amountFieldKey = GlobalKey();
+  final GlobalKey _noteFieldKey = GlobalKey();
+  late final FocusNode _amountFocusNode;
+  late final FocusNode _noteFocusNode;
+  late final VoidCallback _amountFocusListener;
+  late final VoidCallback _noteFocusListener;
 
   DateTime _selectedDate = DateTime.now();
   _EntryType _type = _EntryType.expense;
@@ -36,7 +45,24 @@ class _AddPageState extends ConsumerState<AddPage> {
   bool _isSaving = false;
 
   @override
+  void initState() {
+    super.initState();
+    _amountFocusNode = FocusNode();
+    _noteFocusNode = FocusNode();
+    _amountFocusListener = () =>
+        _handleFocusChange(_amountFocusNode, _amountFieldKey);
+    _noteFocusListener = () =>
+        _handleFocusChange(_noteFocusNode, _noteFieldKey);
+    _amountFocusNode.addListener(_amountFocusListener);
+    _noteFocusNode.addListener(_noteFocusListener);
+  }
+
+  @override
   void dispose() {
+    _amountFocusNode.removeListener(_amountFocusListener);
+    _noteFocusNode.removeListener(_noteFocusListener);
+    _amountFocusNode.dispose();
+    _noteFocusNode.dispose();
     _amountController.dispose();
     _sourceController.dispose();
     _noteController.dispose();
@@ -94,12 +120,19 @@ class _AddPageState extends ConsumerState<AddPage> {
         break;
     }
 
-    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
-    final buttonBottomPadding = viewInsets > 0
-        ? 24.0 + math.min(viewInsets, 40.0)
-        : 24.0;
+    final mediaQuery = MediaQuery.of(context);
+    final viewInsets = mediaQuery.viewInsets.bottom;
+    final safeBottom = mediaQuery.padding.bottom;
+    final keyboardVisible = viewInsets > 0;
+    final buttonBottomPadding = keyboardVisible
+        ? viewInsets + 12.0
+        : safeBottom + _ctaSpacing;
+    final scrollBottomPadding = keyboardVisible
+        ? viewInsets + _ctaHeight + 16.0
+        : _ctaHeight + safeBottom + 16.0;
 
     return SafeArea(
+      top: true,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -119,23 +152,38 @@ class _AddPageState extends ConsumerState<AddPage> {
               onTap: () => FocusScope.of(context).unfocus(),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final contentMinHeight = constraints.hasBoundedHeight
-                      ? math.max(constraints.maxHeight - 140, 0.0)
+                  final minHeight = constraints.hasBoundedHeight
+                      ? math
+                          .max(
+                            constraints.maxHeight -
+                                (_ctaHeight + buttonBottomPadding),
+                            0.0,
+                          )
+                          .toDouble()
                       : 0.0;
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      8,
+                      20,
+                      scrollBottomPadding,
+                    ),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
                     physics: const BouncingScrollPhysics(),
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: contentMinHeight),
+                      constraints: BoxConstraints(minHeight: minHeight),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _AmountField(
                             controller: _amountController,
                             presets: amountPresets,
+                            focusNode: _amountFocusNode,
+                            fieldKey: _amountFieldKey,
                             onPresetTap: (value) => setState(
-                              () => _amountController.text = value
-                                  .toStringAsFixed(0),
+                              () => _amountController.text =
+                                  value.toStringAsFixed(0),
                             ),
                           ),
                           const SizedBox(height: 20),
@@ -144,16 +192,17 @@ class _AddPageState extends ConsumerState<AddPage> {
                               category: effectiveCategory,
                               categories: expenseCategories,
                               icons: quickEntryIcons,
-                              onCategoryTapped: (category) =>
-                                  setState(() => _selectedCategory = category),
+                              onCategoryTapped: (category) => setState(
+                                () => _selectedCategory = category,
+                              ),
                             )
                           else if (_type == _EntryType.inflow)
                             _IncomeExtras(
                               controller: _sourceController,
                               suggestions: incomeSuggestions,
                               onSuggestionTap: (value) => setState(
-                                () => _amountController.text = value
-                                    .toStringAsFixed(0),
+                                () => _amountController.text =
+                                    value.toStringAsFixed(0),
                               ),
                             )
                           else
@@ -163,7 +212,11 @@ class _AddPageState extends ConsumerState<AddPage> {
                                   categoryIcon(ExpenseCategory.savings),
                             ),
                           const SizedBox(height: 20),
-                          _NoteField(controller: _noteController),
+                          _NoteField(
+                            controller: _noteController,
+                            focusNode: _noteFocusNode,
+                            fieldKey: _noteFieldKey,
+                          ),
                           const SizedBox(height: 20),
                           _DatePickerTile(
                             selectedDate: _selectedDate,
@@ -190,7 +243,7 @@ class _AddPageState extends ConsumerState<AddPage> {
                               }
                             },
                           ),
-                          const SizedBox(height: 120),
+                          const SizedBox(height: 24),
                         ],
                       ),
                     ),
@@ -199,8 +252,15 @@ class _AddPageState extends ConsumerState<AddPage> {
               ),
             ),
           ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(20, 8, 20, buttonBottomPadding),
+          AnimatedPadding(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            padding: EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              buttonBottomPadding,
+            ),
             child: FilledButton.icon(
               icon: _isSaving
                   ? const SizedBox(
@@ -209,9 +269,10 @@ class _AddPageState extends ConsumerState<AddPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(switch (_type) {
-                      _EntryType.inflow => Icons.account_balance_wallet_rounded,
+                      _EntryType.inflow =>
+                          Icons.account_balance_wallet_rounded,
                       _EntryType.expense =>
-                        Icons.shopping_cart_checkout_rounded,
+                          Icons.shopping_cart_checkout_rounded,
                       _EntryType.savings => Icons.savings_rounded,
                     }),
               onPressed: _isSaving ? null : () => _submit(context),
@@ -221,7 +282,7 @@ class _AddPageState extends ConsumerState<AddPage> {
                 _EntryType.savings => 'Add savings',
               }),
               style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
+                minimumSize: const Size.fromHeight(_ctaHeight),
               ),
             ),
           ),
@@ -341,6 +402,40 @@ class _AddPageState extends ConsumerState<AddPage> {
     final list = buffer.toList()..sort();
     return list;
   }
+
+  void _handleFocusChange(FocusNode node, GlobalKey fieldKey) {
+    if (!node.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final context = fieldKey.currentContext;
+      if (context == null) return;
+      final renderObject = context.findRenderObject();
+      if (renderObject is! RenderBox) return;
+      final mediaQuery = MediaQuery.maybeOf(context);
+      if (mediaQuery == null) return;
+
+      final fieldBottom = renderObject.localToGlobal(Offset.zero).dy +
+          renderObject.size.height;
+      final keyboardHeight = mediaQuery.viewInsets.bottom;
+      final safeBottom = mediaQuery.padding.bottom;
+      final keyboardVisible = keyboardHeight > 0;
+      final buttonGap = keyboardVisible
+          ? keyboardHeight + 12.0
+          : safeBottom + _ctaSpacing;
+      final ctaTop = keyboardVisible
+          ? mediaQuery.size.height - (keyboardHeight + _ctaHeight + 12.0)
+          : mediaQuery.size.height - (_ctaHeight + buttonGap);
+
+      if (fieldBottom > ctaTop) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 240),
+          alignment: 0.3,
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+  }
 }
 
 class _TypeSegmentedControl extends StatelessWidget {
@@ -379,47 +474,55 @@ class _AmountField extends StatelessWidget {
   const _AmountField({
     required this.controller,
     required this.presets,
+    required this.focusNode,
+    required this.fieldKey,
     required this.onPresetTap,
   });
 
   final TextEditingController controller;
   final List<double> presets;
+  final FocusNode focusNode;
+  final GlobalKey fieldKey;
   final ValueChanged<double> onPresetTap;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          controller: controller,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.attach_money_rounded),
-            labelText: 'Amount',
-          ),
-          scrollPadding: const EdgeInsets.only(bottom: 220),
-        ),
-        if (presets.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemBuilder: (context, index) {
-                final value = presets[index];
-                return ActionChip(
-                  label: Text(formatCurrency(value, compact: false)),
-                  onPressed: () => onPresetTap(value),
-                );
-              },
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemCount: presets.length,
+    return KeyedSubtree(
+      key: fieldKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            focusNode: focusNode,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.attach_money_rounded),
+              labelText: 'Amount',
             ),
+            scrollPadding: const EdgeInsets.only(bottom: 200),
           ),
+          if (presets.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 44,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemBuilder: (context, index) {
+                  final value = presets[index];
+                  return ActionChip(
+                    label: Text(formatCurrency(value, compact: false)),
+                    onPressed: () => onPresetTap(value),
+                  );
+                },
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemCount: presets.length,
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -559,22 +662,32 @@ class _SavingsExtras extends StatelessWidget {
 }
 
 class _NoteField extends StatelessWidget {
-  const _NoteField({required this.controller});
+  const _NoteField({
+    required this.controller,
+    required this.focusNode,
+    required this.fieldKey,
+  });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
+  final GlobalKey fieldKey;
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      maxLines: 1,
-      textInputAction: TextInputAction.done,
-      onEditingComplete: () => FocusScope.of(context).unfocus(),
-      decoration: const InputDecoration(
-        prefixIcon: Icon(Icons.edit_note_rounded),
-        labelText: 'Note (optional)',
+    return KeyedSubtree(
+      key: fieldKey,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        maxLines: 1,
+        textInputAction: TextInputAction.done,
+        onEditingComplete: () => FocusScope.of(context).unfocus(),
+        decoration: const InputDecoration(
+          prefixIcon: Icon(Icons.edit_note_rounded),
+          labelText: 'Note (optional)',
+        ),
+        scrollPadding: const EdgeInsets.only(bottom: 200),
       ),
-      scrollPadding: const EdgeInsets.only(bottom: 220),
     );
   }
 }

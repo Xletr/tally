@@ -51,38 +51,40 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: true,
       body: PageView(
         controller: _controller,
         onPageChanged: (value) => setState(() => _index = value),
         physics: const ClampingScrollPhysics(),
         children: _pages,
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_customize_rounded),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.add_circle_outline),
-            selectedIcon: Icon(Icons.add_circle),
-            label: 'Add',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.subscriptions_outlined),
-            selectedIcon: Icon(Icons.subscriptions_rounded),
-            label: 'Subs',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.analytics_outlined),
-            selectedIcon: Icon(Icons.analytics_rounded),
-            label: 'Insights',
-          ),
-        ],
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: _onDestinationSelected,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard_customize_rounded),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.add_circle_outline),
+              selectedIcon: Icon(Icons.add_circle),
+              label: 'Add',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.subscriptions_outlined),
+              selectedIcon: Icon(Icons.subscriptions_rounded),
+              label: 'Subs',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.analytics_outlined),
+              selectedIcon: Icon(Icons.analytics_rounded),
+              label: 'Insights',
+            ),
+          ],
+        ),
       ),
     );
   }
