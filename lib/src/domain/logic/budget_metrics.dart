@@ -9,10 +9,14 @@ class BudgetMetrics {
     required this.utilization,
     required this.categoryTotals,
     required this.subscriptionsTotal,
+    required this.subscriptionsMonthly,
     required this.savingsDeposited,
     required this.rolloverAmount,
     required this.averageDailySpend,
     required this.savingsTarget,
+    required this.daysInMonth,
+    required this.daysElapsed,
+    required this.isCurrentMonth,
   });
 
   final double available;
@@ -21,12 +25,27 @@ class BudgetMetrics {
   final double utilization;
   final Map<ExpenseCategory, double> categoryTotals;
   final double subscriptionsTotal;
+  final double subscriptionsMonthly;
   final double savingsDeposited;
   final double rolloverAmount;
   final double averageDailySpend;
   final double savingsTarget;
+  final int daysInMonth;
+  final int daysElapsed;
+  final bool isCurrentMonth;
 
   static BudgetMetrics fromMonth(BudgetMonth month) {
+    final now = DateTime.now();
+    final monthDate = DateTime(month.year, month.month);
+    final currentMonthDate = DateTime(now.year, now.month);
+    final isCurrentMonth = monthDate.year == now.year && monthDate.month == now.month;
+    final isFutureMonth = monthDate.isAfter(currentMonthDate);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final daysElapsed = isFutureMonth
+        ? 0
+        : isCurrentMonth
+            ? now.day.clamp(1, daysInMonth)
+            : daysInMonth;
     final available = month.availableFunds;
     final spent = month.expenseTotal;
     final remaining = month.remaining;
@@ -52,12 +71,18 @@ class BudgetMetrics {
         savingsDeposited += expense.amount;
       }
     }
-    final daysElapsed = DateTime.now().day.clamp(
-      1,
-      DateTime(month.year, month.month + 1, 0).day,
-    );
+    final subscriptionsMonthly = month.recurringExpenses
+        .where((template) => template.autoAdd && template.active)
+        .where((template) {
+          final creationMonth = DateTime(
+            template.createdAt.year,
+            template.createdAt.month,
+          );
+          return !creationMonth.isAfter(monthDate);
+        })
+        .fold<double>(0, (sum, template) => sum + template.amount);
     final averageDailySpend = _calculateAverageDailySpend(
-      subscriptionsTotal: subscriptionsTotal,
+      subscriptionsMonthly: subscriptionsMonthly,
       otherExpenseTotal: spent - subscriptionsTotal - savingsDeposited,
       daysElapsed: daysElapsed,
     );
@@ -68,20 +93,24 @@ class BudgetMetrics {
       utilization: utilization,
       categoryTotals: categoryTotals,
       subscriptionsTotal: subscriptionsTotal,
+      subscriptionsMonthly: subscriptionsMonthly,
       savingsDeposited: savingsDeposited,
       rolloverAmount: month.rolloverEnabled ? month.rolloverAmount : 0,
       averageDailySpend: averageDailySpend,
       savingsTarget: month.savingsTarget,
+      daysInMonth: daysInMonth,
+      daysElapsed: daysElapsed,
+      isCurrentMonth: isCurrentMonth,
     );
   }
 
   static double _calculateAverageDailySpend({
-    required double subscriptionsTotal,
+    required double subscriptionsMonthly,
     required double otherExpenseTotal,
     required int daysElapsed,
   }) {
-    final subscriptionDaily = subscriptionsTotal / 30.0;
-    final otherDaily = daysElapsed == 0 ? 0 : otherExpenseTotal / daysElapsed;
+    final subscriptionDaily = subscriptionsMonthly / 30.0;
+    final otherDaily = daysElapsed <= 0 ? 0 : otherExpenseTotal / daysElapsed;
     return subscriptionDaily + otherDaily;
   }
 }

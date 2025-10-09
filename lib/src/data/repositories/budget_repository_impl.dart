@@ -640,7 +640,12 @@ class BudgetRepositoryImpl implements BudgetRepository {
   Future<void> _rebuildRecurringAggregatesForMonth(
     BudgetMonthModel month,
   ) async {
+    final now = _now();
+    final today = DateTime(now.year, now.month, now.day);
+    final currentMonth = DateTime(now.year, now.month);
     final monthDate = DateTime(month.year, month.month);
+    final isFutureMonth = monthDate.isAfter(currentMonth);
+    final isCurrentMonth = monthDate.year == now.year && monthDate.month == now.month;
     final templates = _bootstrap.recurringBox.values
         .where((template) => template.autoAdd && template.active)
         .where((template) {
@@ -657,6 +662,12 @@ class BudgetRepositoryImpl implements BudgetRepository {
     for (final template in templates) {
       final chargeDate = _subscriptionChargeDateForMonth(template, month);
       if (chargeDate == null) continue;
+      if (isFutureMonth) {
+        continue;
+      }
+      if (isCurrentMonth && chargeDate.isAfter(today)) {
+        continue;
+      }
 
       final id = _subscriptionExpenseId(template.id, month.id);
       expectedIds.add(id);
@@ -698,6 +709,10 @@ class BudgetRepositoryImpl implements BudgetRepository {
     );
     for (final entry in recurringEntries) {
       if (!expectedIds.contains(entry.id)) {
+        final entryDate = entry.date;
+        if (entryDate.isBefore(today)) {
+          continue;
+        }
         await _bootstrap.expensesBox.delete(entry.id);
       }
     }
@@ -747,6 +762,8 @@ class BudgetRepositoryImpl implements BudgetRepository {
     if (_bootstrap.monthsBox.isEmpty) {
       return;
     }
+    final now = _now();
+    final currentMonth = DateTime(now.year, now.month);
     final months = _sortedMonthModelsAsc();
     final creationCutoff = focus != null
         ? DateTime(focus.createdAt.year, focus.createdAt.month)
@@ -754,6 +771,10 @@ class BudgetRepositoryImpl implements BudgetRepository {
     for (final month in months) {
       final monthDate = DateTime(month.year, month.month);
       if (creationCutoff != null && monthDate.isBefore(creationCutoff)) {
+        continue;
+      }
+      if (monthDate.isAfter(currentMonth)) {
+        await _rebuildRecurringAggregatesForMonth(month);
         continue;
       }
       await _rebuildRecurringAggregatesForMonth(month);

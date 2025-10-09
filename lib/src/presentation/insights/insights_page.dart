@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,6 +49,10 @@ class _InsightsBody extends ConsumerWidget {
         ? _findPreviousMonth(month, historyMonths)
         : null;
 
+    final guidance = month != null
+        ? computeSpendingGuidance(month: month, insights: insights, now: now)
+        : null;
+
     final priorMonthCount = month == null
         ? 0
         : historyMonths
@@ -59,15 +62,15 @@ class _InsightsBody extends ConsumerWidget {
     final hasThreeAverage = priorMonthCount >= 3;
 
     final categoryDeltas = month != null && previousMonth != null
-        ? _calculateCategoryDeltas(month, previousMonth)
+        ? _calculateCategoryDeltas(month, previousMonth, now)
         : const <_CategoryDelta>[];
 
     final recurringTemplates = recurringAsync.maybeWhen(
       data: (value) => value,
       orElse: () => const <RecurringExpense>[],
     );
-    final recurringSummary = month != null
-        ? _buildRecurringSummary(month, recurringTemplates)
+    final recurringSummary = month != null && guidance != null
+        ? _buildRecurringSummary(month, recurringTemplates, guidance)
         : null;
     final topSpends = month != null
         ? _buildTopSpends(month)
@@ -88,14 +91,14 @@ class _InsightsBody extends ConsumerWidget {
               ),
             ),
           ),
-          if (month != null)
+          if (month != null && guidance != null)
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               sliver: SliverToBoxAdapter(
                 child: _SpendingOutlookCard(
                   month: month,
                   insights: insights,
-                  now: now,
+                  guidance: guidance,
                 ),
               ),
             ),
@@ -152,21 +155,16 @@ class _SpendingOutlookCard extends StatelessWidget {
   const _SpendingOutlookCard({
     required this.month,
     required this.insights,
-    required this.now,
+    required this.guidance,
   });
 
   final BudgetMonth month;
   final BudgetInsights insights;
-  final DateTime now;
+  final SpendingGuidance guidance;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final guidance = computeSpendingGuidance(
-      month: month,
-      insights: insights,
-      now: now,
-    );
     final remaining = guidance.remaining;
     final daysRemaining = guidance.daysRemaining;
     final projectedBalance = guidance.projectedClose;
@@ -226,13 +224,17 @@ class _SpendingOutlookCard extends StatelessWidget {
         ? 'Whole month'
         : '~${runwayDays <= 0 ? 0 : runwayDays.ceil()} days';
 
-    final plannedDaily = guidance.budgetedDaily;
+    final totalSpendable = month.availableFunds - month.savingsTarget;
+    final adjustedSpendable = totalSpendable <= 0 ? 0.0 : totalSpendable;
+    final plannedDaily = guidance.daysInMonth == 0
+        ? 0.0
+        : adjustedSpendable / guidance.daysInMonth;
     final diffDaily = guidance.averageDailySpend - plannedDaily;
     final varianceLabel = diffDaily.abs() < 0.5
         ? '${formatCurrency(guidance.averageDailySpend)}/day (on plan)'
         : diffDaily > 0
-        ? '${formatCurrency(guidance.averageDailySpend)}/day (+${formatCurrency(diffDaily.abs())} vs plan)'
-        : '${formatCurrency(guidance.averageDailySpend)}/day (-${formatCurrency(diffDaily.abs())} vs plan)';
+            ? '${formatCurrency(guidance.averageDailySpend)}/day (+${formatCurrency(diffDaily.abs())}/day vs plan)'
+            : '${formatCurrency(guidance.averageDailySpend)}/day (-${formatCurrency(diffDaily.abs())}/day vs plan)';
 
     return Card(
       child: Padding(
@@ -393,10 +395,20 @@ class _CategoryDeltaTile extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final change = delta.delta;
-    final isIncrease = change > 0;
-    final indicatorColor = isIncrease ? colorScheme.error : colorScheme.primary;
-    final changeLabel =
-        '${isIncrease ? 'Up' : 'Down'} ${_formatSignedCurrency(change)} vs last month';
+    final isIncrease = change > 0.5;
+    final isDecrease = change < -0.5;
+    final indicatorColor = isIncrease
+        ? colorScheme.error
+        : isDecrease
+            ? colorScheme.primary
+            : colorScheme.onSurfaceVariant;
+    final changeLabel = () {
+      if (!isIncrease && !isDecrease) {
+        return 'Tracking close to last month.';
+      }
+      final direction = isIncrease ? 'Up' : 'Down';
+      return '$direction ${formatCurrency(change.abs())} projected vs last month';
+    }();
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -415,7 +427,7 @@ class _CategoryDeltaTile extends StatelessWidget {
               const SizedBox(height: 4),
               Text(changeLabel, style: theme.textTheme.bodySmall),
               Text(
-                'This month: ${formatCurrency(delta.current)}',
+                'Projected: ${formatCurrency(delta.current)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -449,7 +461,9 @@ class _RecurringImpactCard extends StatelessWidget {
       );
     }
 
-    final sharePercent = summary.share * 100;
+    final sharePercent =
+        (summary.share * 100).clamp(0, 9999.0).toDouble();
+    final descriptor = 'Total';
 
     return Card(
       child: Padding(
@@ -466,7 +480,7 @@ class _RecurringImpactCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${formatCurrency(summary.total)} this month (${formatPercentage(sharePercent, decimals: 0)} of spending).',
+              '$descriptor ${formatCurrency(summary.total)} this month (${formatPercentage(sharePercent, decimals: 0)} of projected spend).',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: 12),
@@ -525,11 +539,14 @@ class _RecurringBreakdownTile extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        LinearProgressIndicator(
-          value: share.clamp(0, 1),
-          minHeight: 6,
-          backgroundColor: colorScheme.surfaceContainerHighest,
-          valueColor: AlwaysStoppedAnimation(colorScheme.primary),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: share.clamp(0, 1),
+            minHeight: 8,
+            backgroundColor: colorScheme.surfaceContainerHighest,
+            valueColor: AlwaysStoppedAnimation(colorScheme.primary),
+          ),
         ),
         const SizedBox(height: 4),
         Text(
@@ -652,8 +669,8 @@ class _ComparisonRow extends StatelessWidget {
           child: _ComparisonCard(
             label: 'vs last month',
             delta: insights.previousComparison.vsPreviousMonth,
-            positiveIsGood: false,
             hasData: hasPreviousMonth,
+            comparisonLabel: 'last month',
           ),
         ),
         const SizedBox(width: 12),
@@ -661,8 +678,8 @@ class _ComparisonRow extends StatelessWidget {
           child: _ComparisonCard(
             label: 'vs 3-month avg',
             delta: insights.previousComparison.vsThreeMonthAverage,
-            positiveIsGood: false,
             hasData: hasThreeMonthAverage,
+            comparisonLabel: 'the 3-month average',
           ),
         ),
       ],
@@ -674,14 +691,14 @@ class _ComparisonCard extends StatelessWidget {
   const _ComparisonCard({
     required this.label,
     required this.delta,
-    this.positiveIsGood = false,
     this.hasData = true,
+    this.comparisonLabel = 'last period',
   });
 
   final String label;
   final double delta;
-  final bool positiveIsGood;
   final bool hasData;
+  final String comparisonLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -705,13 +722,27 @@ class _ComparisonCard extends StatelessWidget {
         ),
       );
     }
-    final isPositive = delta <= 0;
-    final icon = isPositive
-        ? Icons.arrow_downward_rounded
-        : Icons.arrow_upward_rounded;
-    final color = isPositive == positiveIsGood
-        ? theme.colorScheme.primaryContainer
-        : theme.colorScheme.errorContainer;
+    final improvementThreshold = 0.1;
+    final isDecrease = delta <= -improvementThreshold;
+    final isIncrease = delta >= improvementThreshold;
+    final neutral = !isDecrease && !isIncrease;
+    final icon = neutral
+        ? Icons.horizontal_rule_rounded
+        : (isDecrease
+            ? Icons.arrow_downward_rounded
+            : Icons.arrow_upward_rounded);
+    final color = neutral
+        ? theme.colorScheme.surfaceContainerHighest
+        : isDecrease
+            ? theme.colorScheme.primaryContainer
+            : theme.colorScheme.errorContainer;
+    final description = () {
+      if (neutral) {
+        return 'Tracking close to last month.';
+      }
+      final direction = isDecrease ? 'Down' : 'Up';
+      return '$direction ${formatCurrency(delta.abs())}/day compared to $comparisonLabel.';
+    }();
 
     return Card(
       color: color,
@@ -724,11 +755,12 @@ class _ComparisonCard extends StatelessWidget {
             Text(label, style: theme.textTheme.labelLarge),
             const SizedBox(height: 16),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Icon(icon),
                 const SizedBox(width: 6),
                 Text(
-                  '${delta.abs().toStringAsFixed(1)}%',
+                  '${_formatSignedCurrency(delta)} /day',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -736,10 +768,7 @@ class _ComparisonCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              isPositive ? 'Improving' : 'Higher spend',
-              style: theme.textTheme.bodySmall,
-            ),
+            Text(description, style: theme.textTheme.bodySmall),
           ],
         ),
       ),
@@ -869,11 +898,13 @@ class _RecurringSummary {
     required this.total,
     required this.share,
     required this.breakdowns,
+    required this.projected,
   });
 
   final double total;
   final double share;
   final List<_RecurringBreakdown> breakdowns;
+  final bool projected;
 }
 
 class _RecurringBreakdown {
@@ -922,11 +953,13 @@ BudgetMonth? _findPreviousMonth(BudgetMonth current, List<BudgetMonth> months) {
 List<_CategoryDelta> _calculateCategoryDeltas(
   BudgetMonth current,
   BudgetMonth previous,
+  DateTime now,
 ) {
   Map<ExpenseCategory, double> totalsFor(BudgetMonth month) {
     final totals = <ExpenseCategory, double>{};
     for (final expense in month.expenses) {
-      if (expense.category == ExpenseCategory.savings) {
+      if (expense.category == ExpenseCategory.savings ||
+          expense.category == ExpenseCategory.subscriptions) {
         continue;
       }
       totals.update(
@@ -945,14 +978,23 @@ List<_CategoryDelta> _calculateCategoryDeltas(
     ...previousTotals.keys,
   };
 
+  final daysInMonth = DateTime(current.year, current.month + 1, 0).day;
+  final isCurrent = now.year == current.year && now.month == current.month;
+  final daysElapsed = isCurrent
+      ? now.day.clamp(1, daysInMonth)
+      : daysInMonth;
+
   final deltas =
       categories
           .map((category) {
             final currentValue = currentTotals[category] ?? 0;
             final previousValue = previousTotals[category] ?? 0;
+            final projectedCurrent = daysElapsed == 0
+                ? currentValue
+                : (currentValue / daysElapsed) * daysInMonth;
             return _CategoryDelta(
               category: category,
-              current: currentValue,
+              current: projectedCurrent,
               previous: previousValue,
             );
           })
@@ -963,52 +1005,102 @@ List<_CategoryDelta> _calculateCategoryDeltas(
   return deltas;
 }
 
-_RecurringSummary _buildRecurringSummary(
+_RecurringSummary? _buildRecurringSummary(
   BudgetMonth month,
   List<RecurringExpense> templates,
+  SpendingGuidance guidance,
 ) {
-  final expenses = month.expenses
-      .where((expense) => expense.category == ExpenseCategory.subscriptions)
-      .toList();
-  if (expenses.isEmpty) {
-    return const _RecurringSummary(total: 0, share: 0, breakdowns: []);
+  final monthDate = DateTime(month.year, month.month);
+  final activeTemplates = templates.where((template) {
+    if (!template.autoAdd || !template.active) {
+      return false;
+    }
+    final creationMonth = DateTime(
+      template.createdAt.year,
+      template.createdAt.month,
+    );
+    return !creationMonth.isAfter(monthDate);
+  }).toList();
+
+  if (activeTemplates.isEmpty) {
+    final fallbackExpenses = month.expenses
+        .where((expense) => expense.category == ExpenseCategory.subscriptions)
+        .toList();
+    if (fallbackExpenses.isEmpty) {
+      return null;
+    }
+
+    final grouped = <String, double>{};
+    for (final expense in fallbackExpenses) {
+      final noteLabel = expense.note?.trim();
+      final key = (noteLabel != null && noteLabel.isNotEmpty)
+          ? noteLabel
+          : 'Subscription';
+      grouped.update(
+        key,
+        (value) => value + expense.amount,
+        ifAbsent: () => expense.amount,
+      );
+    }
+
+    final breakdowns = grouped.entries
+        .map(
+          (entry) => _RecurringBreakdown(
+            label: entry.key,
+            amount: entry.value,
+          ),
+        )
+        .toList()
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+
+    final total = fallbackExpenses.fold<double>(
+      0,
+      (sum, expense) => sum + expense.amount,
+    );
+    if (total <= 0) {
+      return null;
+    }
+    final projectedTotal = guidance.projectedTotalSpend <= 0
+        ? total
+        : guidance.projectedTotalSpend;
+    final share = projectedTotal <= 0 ? 0.0 : total / projectedTotal;
+
+    return _RecurringSummary(
+      total: total,
+      share: share,
+      breakdowns: breakdowns,
+      projected: false,
+    );
   }
 
-  final grouped = <String, double>{};
-  for (final expense in expenses) {
-    final template = templates.firstWhereOrNull(
-      (template) => template.id == expense.recurringTemplateId,
-    );
-    final templateLabel = template?.label.trim();
-    final noteLabel = expense.note?.trim();
-    final key = (templateLabel != null && templateLabel.isNotEmpty)
-        ? templateLabel
-        : (noteLabel != null && noteLabel.isNotEmpty
-              ? noteLabel
-              : 'Subscription');
-    grouped.update(
-      key,
-      (value) => value + expense.amount,
-      ifAbsent: () => expense.amount,
-    );
-  }
+  final breakdowns = activeTemplates
+      .map(
+        (template) => _RecurringBreakdown(
+          label: template.label.isEmpty ? 'Subscription' : template.label,
+          amount: template.amount,
+        ),
+      )
+      .toList()
+    ..sort((a, b) => b.amount.compareTo(a.amount));
 
-  final breakdowns =
-      grouped.entries
-          .map(
-            (entry) =>
-                _RecurringBreakdown(label: entry.key, amount: entry.value),
-          )
-          .toList()
-        ..sort((a, b) => b.amount.compareTo(a.amount));
-
-  final total = expenses.fold<double>(
+  final total = activeTemplates.fold<double>(
     0,
-    (sum, expense) => sum + expense.amount,
+    (sum, template) => sum + template.amount,
   );
-  final share = month.expenseTotal == 0 ? 0.0 : total / month.expenseTotal;
+  if (total <= 0) {
+    return null;
+  }
+  final projectedTotal = guidance.projectedTotalSpend <= 0
+      ? total
+      : guidance.projectedTotalSpend;
+  final share = projectedTotal <= 0 ? 0.0 : total / projectedTotal;
 
-  return _RecurringSummary(total: total, share: share, breakdowns: breakdowns);
+  return _RecurringSummary(
+    total: total,
+    share: share,
+    breakdowns: breakdowns,
+    projected: true,
+  );
 }
 
 bool _isBefore(BudgetMonth a, BudgetMonth b) {

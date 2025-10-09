@@ -156,7 +156,9 @@ class _HomeScrollView extends StatelessWidget {
         ),
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          sliver: SliverToBoxAdapter(child: _CategorySection(metrics: metrics)),
+          sliver: SliverToBoxAdapter(
+            child: _CategorySection(metrics: metrics, month: month),
+          ),
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -438,41 +440,105 @@ class _SavingsInlineProgress extends StatelessWidget {
 }
 
 class _CategorySection extends StatelessWidget {
-  const _CategorySection({required this.metrics});
+  const _CategorySection({required this.metrics, required this.month});
 
   final BudgetMetrics metrics;
+  final BudgetMonth month;
 
   @override
   Widget build(BuildContext context) {
-    if (metrics.categoryTotals.isEmpty) {
+    final daysInMonth = metrics.daysInMonth == 0
+        ? DateTime(month.year, month.month + 1, 0).day
+        : metrics.daysInMonth;
+    final effectiveDaysElapsed = () {
+      if (daysInMonth == 0) {
+        return 0;
+      }
+      if (metrics.daysElapsed == 0) {
+        return metrics.isCurrentMonth ? 1 : daysInMonth;
+      }
+      return metrics.daysElapsed;
+    }();
+
+    final adjustedTotals = <ExpenseCategory, double>{}
+      ..addAll(metrics.categoryTotals);
+    final subscriptionsMonthly = metrics.subscriptionsMonthly;
+    if (subscriptionsMonthly > 0 && daysInMonth > 0) {
+      final projectedSubscription = (subscriptionsMonthly / daysInMonth) *
+          effectiveDaysElapsed.clamp(0, daysInMonth);
+      if (projectedSubscription > 0) {
+        adjustedTotals[ExpenseCategory.subscriptions] = projectedSubscription;
+      }
+    }
+
+    adjustedTotals.removeWhere((_, value) => value <= 0);
+    if (adjustedTotals.isEmpty && subscriptionsMonthly <= 0) {
       return const _EmptyCategories();
     }
+
+    final chartData = Map<ExpenseCategory, double>.from(adjustedTotals);
+    if (subscriptionsMonthly > 0 && !chartData.containsKey(ExpenseCategory.subscriptions)) {
+      final projectedSubscription = daysInMonth == 0
+          ? subscriptionsMonthly
+          : (subscriptionsMonthly / daysInMonth) *
+              effectiveDaysElapsed.clamp(0, daysInMonth);
+      if (projectedSubscription > 0) {
+        chartData[ExpenseCategory.subscriptions] = projectedSubscription;
+      }
+    }
+
+    chartData.removeWhere((_, value) => value <= 0);
+    if (chartData.isEmpty) {
+      return const _EmptyCategories();
+    }
+
+    final totalForPercentage =
+        chartData.values.fold<double>(0, (sum, value) => sum + value);
+    final chipCategories = {
+      ...metrics.categoryTotals.keys,
+      if (subscriptionsMonthly > 0) ExpenseCategory.subscriptions,
+    };
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Where money is going',
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 16),
         SizedBox(
           height: 200,
-          child: CategoryPieChart(data: metrics.categoryTotals),
+          child: CategoryPieChart(data: chartData),
         ),
         const SizedBox(height: 12),
         Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: metrics.categoryTotals.entries.map((entry) {
-            final percentage = metrics.spent == 0
+          children: chipCategories.where((category) {
+            if (category == ExpenseCategory.subscriptions) {
+              return subscriptionsMonthly > 0;
+            }
+            return (metrics.categoryTotals[category] ?? 0) > 0;
+          }).map((category) {
+            final projectedValue = chartData[category] ?? 0;
+            final displayAmount = category == ExpenseCategory.subscriptions
+                ? subscriptionsMonthly
+                : metrics.categoryTotals[category] ?? 0;
+            final percentage = totalForPercentage == 0
                 ? 0.0
-                : (entry.value / metrics.spent) * 100;
+                : (projectedValue / totalForPercentage) * 100;
+            final estimated = category == ExpenseCategory.subscriptions;
             return _CategoryChip(
-              category: entry.key,
-              amount: entry.value,
+              category: category,
+              amount: displayAmount,
               percentage: percentage,
+              estimated: estimated,
+              amountLabel:
+                  estimated ? formatCurrency(displayAmount) : null,
             );
           }).toList(),
         ),
@@ -521,11 +587,15 @@ class _CategoryChip extends StatelessWidget {
     required this.category,
     required this.amount,
     required this.percentage,
+    this.estimated = false,
+    this.amountLabel,
   });
 
   final ExpenseCategory category;
   final double amount;
   final double percentage;
+  final bool estimated;
+  final String? amountLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -551,7 +621,7 @@ class _CategoryChip extends StatelessWidget {
             children: [
               Text(category.label, style: theme.textTheme.labelLarge),
               Text(
-                '${formatCurrency(amount)} · ${formatPercentage(percentage)}',
+                '${amountLabel ?? formatCurrency(amount)} · ${estimated ? 'est ${formatPercentage(percentage)}' : formatPercentage(percentage)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -606,6 +676,8 @@ class _TimelineTile extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: tileOnTap,
         onLongPress: tileOnTap,

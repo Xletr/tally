@@ -4,14 +4,16 @@ import 'package:tally/src/domain/entities/budget_month.dart';
 import 'package:tally/src/domain/entities/expense_category.dart';
 import 'package:tally/src/domain/entities/expense_entry.dart';
 import 'package:tally/src/domain/entities/income_entry.dart';
+import 'package:tally/src/domain/entities/recurring_expense.dart';
 import 'package:tally/src/domain/logic/budget_metrics.dart';
 
 void main() {
   test('BudgetMetrics calculates inflow and average daily spend', () {
+    final now = DateTime.now();
     final month = BudgetMonth(
-      id: '2025-09',
-      year: 2025,
-      month: 9,
+      id: '${now.year}-${now.month.toString().padLeft(2, '0')}',
+      year: now.year,
+      month: now.month,
       baseAllowance: 0,
       rolloverAmount: 200,
       rolloverEnabled: true,
@@ -19,53 +21,70 @@ void main() {
       incomes: [
         IncomeEntry(
           id: 'inc-1',
-          monthId: '2025-09',
+          monthId: '${now.year}-${now.month.toString().padLeft(2, '0')}',
           source: 'Monthly inflow',
           amount: 1000,
-          date: DateTime(2025, 9, 1),
-          createdAt: DateTime(2025, 9, 1),
+          date: DateTime(now.year, now.month, 1),
+          createdAt: DateTime(now.year, now.month, 1),
         ),
       ],
       expenses: [
         ExpenseEntry(
           id: 'exp-1',
-          monthId: '2025-09',
+          monthId: '${now.year}-${now.month.toString().padLeft(2, '0')}',
           category: ExpenseCategory.subscriptions,
           amount: 150,
-          date: DateTime(2025, 9, 1),
-          createdAt: DateTime(2025, 9, 1),
+          date: DateTime(now.year, now.month, 1),
+          createdAt: DateTime(now.year, now.month, 1),
         ),
         ExpenseEntry(
           id: 'exp-2',
-          monthId: '2025-09',
+          monthId: '${now.year}-${now.month.toString().padLeft(2, '0')}',
           category: ExpenseCategory.food,
           amount: 200,
-          date: DateTime(2025, 9, 5),
-          createdAt: DateTime(2025, 9, 5),
+          date: DateTime(now.year, now.month, 5),
+          createdAt: DateTime(now.year, now.month, 5),
         ),
         ExpenseEntry(
           id: 'exp-3',
-          monthId: '2025-09',
+          monthId: '${now.year}-${now.month.toString().padLeft(2, '0')}',
           category: ExpenseCategory.savings,
           amount: 120,
-          date: DateTime(2025, 9, 3),
-          createdAt: DateTime(2025, 9, 3),
+          date: DateTime(now.year, now.month, 3),
+          createdAt: DateTime(now.year, now.month, 3),
         ),
       ],
-      recurringExpenses: const [],
-      createdAt: DateTime(2025, 9, 1),
-      updatedAt: DateTime(2025, 9, 5),
+      recurringExpenses: [
+        RecurringExpense(
+          id: 'rec-1',
+          label: 'Music',
+          category: ExpenseCategory.subscriptions,
+          amount: 150,
+          dayOfMonth: 1,
+          autoAdd: true,
+          active: true,
+          note: null,
+          createdAt: DateTime(now.year, now.month, 1),
+          updatedAt: DateTime(now.year, now.month, 1),
+        ),
+      ],
+      createdAt: DateTime(now.year, now.month, 1),
+      updatedAt: DateTime(now.year, now.month, 5),
     );
 
     final metrics = BudgetMetrics.fromMonth(month);
 
-    final daysElapsed = DateTime.now().day.clamp(1, DateTime(2025, 9, 30).day);
-    final expectedAverage = (150 / 30.0) + (200 / daysElapsed);
+    final daysElapsed = metrics.daysElapsed == 0 ? 1 : metrics.daysElapsed;
+    final otherExpenseTotal = month.expenseTotal - metrics.subscriptionsTotal - metrics.savingsDeposited;
+    final expectedAverage = (metrics.subscriptionsMonthly / 30.0) + (otherExpenseTotal / daysElapsed);
 
     expect(metrics.available, 1200);
     expect(metrics.subscriptionsTotal, 150);
+    expect(metrics.subscriptionsMonthly, 150);
     expect(metrics.savingsDeposited, 120);
     expect(metrics.rolloverAmount, 200);
     expect(metrics.averageDailySpend, closeTo(expectedAverage, 0.01));
+    expect(metrics.daysInMonth, DateTime(now.year, now.month + 1, 0).day);
+    expect(metrics.isCurrentMonth, true);
   });
 }

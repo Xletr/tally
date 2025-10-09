@@ -18,6 +18,7 @@ class SpendingGuidance {
     required this.savingsSoFar,
     required this.savingsGap,
     required this.projectedClose,
+    required this.projectedTotalSpend,
     required this.runwayDays,
     required this.budgetedDaily,
     required this.burnVariancePercent,
@@ -35,6 +36,7 @@ class SpendingGuidance {
   final double savingsSoFar;
   final double savingsGap;
   final double projectedClose;
+  final double projectedTotalSpend;
   final double? runwayDays;
   final double budgetedDaily;
   final double burnVariancePercent;
@@ -80,8 +82,9 @@ SpendingGuidance computeSpendingGuidance({
       : spendableAfterSavings / daysRemaining;
 
   final totalAvailable = month.availableFunds;
-  final projectedClose =
-      totalAvailable - (averageDailySpend * daysInMonth) - savingsSoFar;
+  final projectedDiscretionary = averageDailySpend * daysInMonth;
+  final projectedTotalSpend = projectedDiscretionary + savingsSoFar;
+  final projectedClose = totalAvailable - projectedTotalSpend;
 
   double? runwayDays;
   if (averageDailySpend <= 0) {
@@ -105,6 +108,7 @@ SpendingGuidance computeSpendingGuidance({
     savingsSoFar: savingsSoFar,
     savingsGap: savingsGap,
     projectedClose: projectedClose,
+    projectedTotalSpend: projectedTotalSpend,
     runwayDays: runwayDays,
     budgetedDaily: budgetedDaily,
     burnVariancePercent: burnVariancePercent,

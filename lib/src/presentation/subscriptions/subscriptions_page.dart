@@ -46,6 +46,10 @@ class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
     final sortedSummaries = _sortedSummaries();
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
+        elevation: 0,
+        highlightElevation: 0,
+        focusElevation: 0,
+        hoverElevation: 0,
         onPressed: () => _showSubscriptionEditor(context, ref),
         icon: const Icon(Icons.add),
         label: const Text('Add subscription'),
@@ -74,36 +78,38 @@ class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
                     ],
                   ),
                   const Spacer(),
-                  DropdownButtonHideUnderline(
-                    child: DropdownButton<_SubscriptionSort>(
-                      value: _sort,
-                      alignment: Alignment.centerRight,
-                      icon: const Icon(Icons.arrow_drop_down_rounded),
-                      borderRadius: BorderRadius.circular(16),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _sort = value);
-                      },
-                      items: _SubscriptionSort.values
-                          .map(
-                            (option) => DropdownMenuItem<_SubscriptionSort>(
-                              value: option,
-                              child: Text(_sortLabel(option)),
-                            ),
-                          )
-                          .toList(),
-                      selectedItemBuilder: (context) =>
-                          _SubscriptionSort.values.map((option) {
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.sort_rounded, size: 18),
-                            const SizedBox(width: 6),
-                            Text(_sortLabel(option)),
-                          ],
-                        );
-                      }).toList(),
+                  SegmentedButton<_SubscriptionSort>(
+                    segments: const [
+                      ButtonSegment(
+                        value: _SubscriptionSort.nextCharge,
+                        label: Text('Next charge'),
+                        icon: Icon(Icons.schedule_rounded),
+                      ),
+                      ButtonSegment(
+                        value: _SubscriptionSort.amountHigh,
+                        label: Text('Highest cost'),
+                        icon: Icon(Icons.price_change_rounded),
+                      ),
+                      ButtonSegment(
+                        value: _SubscriptionSort.name,
+                        label: Text('Name A–Z'),
+                        icon: Icon(Icons.sort_by_alpha_rounded),
+                      ),
+                    ],
+                    selected: {_sort},
+                    showSelectedIcon: false,
+                    style: ButtonStyle(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      shape: WidgetStateProperty.all(
+                        RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
+                    onSelectionChanged: (selection) {
+                      setState(() => _sort = selection.first);
+                    },
                   ),
                 ],
               ),
@@ -164,17 +170,6 @@ class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
         break;
     }
     return list;
-  }
-
-  String _sortLabel(_SubscriptionSort sort) {
-    switch (sort) {
-      case _SubscriptionSort.nextCharge:
-        return 'Next charge';
-      case _SubscriptionSort.amountHigh:
-        return 'Highest cost';
-      case _SubscriptionSort.name:
-        return 'Name A-Z';
-    }
   }
 
   DateTime _nextChargeDate(RecurringExpense template) {
@@ -254,6 +249,8 @@ class _SubscriptionCard extends ConsumerWidget {
         : '${summary.chargeCount} charges · ${formatCurrency(lifetime)} total';
 
     return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         title: Text(
           template.label.isEmpty ? 'Subscription' : template.label,
@@ -408,9 +405,61 @@ Future<void> _showSubscriptionEditor(
                 onChanged: (value) => setState(() => active = value),
               ),
               const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Save subscription'),
+              Row(
+                children: [
+                  if (existing != null)
+                    TextButton.icon(
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Delete subscription?'),
+                            content: const Text(
+                              'This removes future charges but keeps previous history.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(false),
+                                child: const Text('Cancel'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.of(context).pop(true),
+                                child: const Text('Delete'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true) {
+                          if (!context.mounted) {
+                            return;
+                          }
+                          await repository
+                              .deleteRecurringExpense(existing.id);
+                          if (!context.mounted) {
+                            return;
+                          }
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Subscription deleted'),
+                            ),
+                          );
+                          ref.invalidate(subscriptionSummariesProvider);
+                          Navigator.of(context).pop(null);
+                        }
+                      },
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Delete'),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                  const Spacer(),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(
+                      existing == null ? 'Add subscription' : 'Save changes',
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

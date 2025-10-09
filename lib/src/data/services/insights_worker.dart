@@ -17,24 +17,27 @@ Map<String, dynamic> runInsightsWorker(InsightsPayload payload) {
   final remaining = target.remaining;
   final averageDailySpend = target.averageDailySpend(now);
 
-  final previous = history
+  final previousList = history
       .where((snap) => snap.compareKey < target.compareKey)
-      .lastWhere((snap) => true, orElse: () => target);
+      .toList()
+    ..sort((a, b) => b.compareKey.compareTo(a.compareKey));
 
-  final threeMonthWindow =
-      history.where((snap) => snap.compareKey < target.compareKey).toList()
-        ..sort((a, b) => b.compareKey.compareTo(a.compareKey));
-  final threeAverage = threeMonthWindow
-      .take(3)
-      .map((snap) => snap.expenseTotal)
-      .toList();
-  final averageThree = threeAverage.isEmpty
-      ? totalExpenses
-      : threeAverage.reduce((a, b) => a + b) / threeAverage.length;
+  double averageDailyFor(_Snapshot snap) => snap.averageDailySpend(now);
+
+  final currentAvgDaily = averageDailyFor(target);
+  final previousAvgDaily = previousList.isEmpty
+      ? currentAvgDaily
+      : averageDailyFor(previousList.first);
+
+  final recentThree = previousList.take(3).toList();
+  final threeAverageDaily = recentThree.isEmpty
+      ? currentAvgDaily
+      : recentThree.map(averageDailyFor).reduce((a, b) => a + b) /
+          recentThree.length;
 
   final comparison = {
-    'vsPreviousMonth': _percentDelta(totalExpenses, previous.expenseTotal),
-    'vsThreeMonthAverage': _percentDelta(totalExpenses, averageThree),
+    'vsPreviousMonth': currentAvgDaily - previousAvgDaily,
+    'vsThreeMonthAverage': currentAvgDaily - threeAverageDaily,
   };
 
   final topCategories =
@@ -68,9 +71,9 @@ Map<String, dynamic> runInsightsWorker(InsightsPayload payload) {
       .toList();
 
   final projectedOverspendPercent = target.projectedOverspendPercent(now);
-  final isImproving = previous.expenseTotal == 0
+  final isImproving = previousList.isEmpty
       ? true
-      : totalExpenses <= previous.expenseTotal;
+      : currentAvgDaily <= previousAvgDaily;
 
   return {
     'monthId': target.id,
@@ -215,11 +218,4 @@ class _ExpensePoint {
   final double amount;
   final String category;
   final DateTime date;
-}
-
-double _percentDelta(double current, double reference) {
-  if (reference == 0) {
-    return current == 0 ? 0 : 100;
-  }
-  return (current - reference) / reference * 100;
 }
