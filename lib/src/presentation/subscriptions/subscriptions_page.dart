@@ -78,37 +78,53 @@ class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
                     ],
                   ),
                   const Spacer(),
-                  SegmentedButton<_SubscriptionSort>(
-                    segments: const [
-                      ButtonSegment(
-                        value: _SubscriptionSort.nextCharge,
-                        label: Text('Next charge'),
-                        icon: Icon(Icons.schedule_rounded),
-                      ),
-                      ButtonSegment(
-                        value: _SubscriptionSort.amountHigh,
-                        label: Text('Highest cost'),
-                        icon: Icon(Icons.price_change_rounded),
-                      ),
-                      ButtonSegment(
-                        value: _SubscriptionSort.name,
-                        label: Text('Name A–Z'),
-                        icon: Icon(Icons.sort_by_alpha_rounded),
-                      ),
-                    ],
-                    selected: {_sort},
-                    showSelectedIcon: false,
-                    style: ButtonStyle(
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      shape: WidgetStateProperty.all(
-                        RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                  MenuAnchor(
+                    alignmentOffset: const Offset(0, 12),
+                    style: MenuStyle(
+                      padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)),
+                      elevation: const WidgetStatePropertyAll(0),
+                      shape: WidgetStatePropertyAll(
+                        RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                     ),
-                    onSelectionChanged: (selection) {
-                      setState(() => _sort = selection.first);
+                    menuChildren: _SubscriptionSort.values.map((option) {
+                      return MenuItemButton(
+                        onPressed: () => setState(() => _sort = option),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              switch (option) {
+                                _SubscriptionSort.nextCharge => Icons.schedule_rounded,
+                                _SubscriptionSort.amountHigh => Icons.price_change_rounded,
+                                _SubscriptionSort.name => Icons.sort_by_alpha_rounded,
+                              },
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(child: Text(_sortLabel(option))),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    builder: (context, controller, child) {
+                      return FilledButton.tonalIcon(
+                        icon: const Icon(Icons.filter_list_rounded),
+                        label: Text(_sortLabel(_sort)),
+                        onPressed: () {
+                          if (controller.isOpen) {
+                            controller.close();
+                          } else {
+                            controller.open();
+                          }
+                        },
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          foregroundColor: theme.colorScheme.onSecondaryContainer,
+                          backgroundColor: theme.colorScheme.secondaryContainer,
+                          elevation: 0,
+                        ),
+                      );
                     },
                   ),
                 ],
@@ -170,6 +186,17 @@ class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
         break;
     }
     return list;
+  }
+
+  String _sortLabel(_SubscriptionSort sort) {
+    switch (sort) {
+      case _SubscriptionSort.nextCharge:
+        return 'Next charge';
+      case _SubscriptionSort.amountHigh:
+        return 'Highest cost';
+      case _SubscriptionSort.name:
+        return 'Name A–Z';
+    }
   }
 
   DateTime _nextChargeDate(RecurringExpense template) {
