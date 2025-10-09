@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
@@ -275,7 +276,12 @@ class _AddPageState extends ConsumerState<AddPage> {
                           Icons.shopping_cart_checkout_rounded,
                       _EntryType.savings => Icons.savings_rounded,
                     }),
-              onPressed: _isSaving ? null : () => _submit(context),
+                onPressed: _isSaving
+                    ? null
+                    : () {
+                        HapticFeedback.mediumImpact();
+                        _submit(context);
+                      },
               label: Text(switch (_type) {
                 _EntryType.inflow => 'Add inflow',
                 _EntryType.expense => 'Add expense',
@@ -298,6 +304,7 @@ class _AddPageState extends ConsumerState<AddPage> {
       messenger.showSnackBar(
         const SnackBar(content: Text('Enter a valid amount')),
       );
+      HapticFeedback.heavyImpact();
       return;
     }
 
@@ -366,6 +373,7 @@ class _AddPageState extends ConsumerState<AddPage> {
       }
       if (!mounted) return;
       messenger.showSnackBar(const SnackBar(content: Text('Saved')));
+      HapticFeedback.mediumImpact();
       setState(() {
         _amountController.clear();
         _noteController.clear();
@@ -377,6 +385,7 @@ class _AddPageState extends ConsumerState<AddPage> {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not save entry')),
       );
+      HapticFeedback.heavyImpact();
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -465,7 +474,10 @@ class _TypeSegmentedControl extends StatelessWidget {
         ),
       ],
       selected: {type},
-      onSelectionChanged: (selection) => onChanged(selection.first),
+      onSelectionChanged: (selection) {
+        HapticFeedback.selectionClick();
+        onChanged(selection.first);
+      },
     );
   }
 }
@@ -513,7 +525,10 @@ class _AmountField extends StatelessWidget {
                   final value = presets[index];
                   return ActionChip(
                     label: Text(formatCurrency(value, compact: false)),
-                    onPressed: () => onPresetTap(value),
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      onPresetTap(value);
+                    },
                   );
                 },
                 separatorBuilder: (_, __) => const SizedBox(width: 10),
@@ -564,7 +579,10 @@ class _ExpenseExtras extends StatelessWidget {
                 label: Text(value.label),
                 avatar: Icon(icons[value] ?? categoryIcon(value), size: 18),
                 selected: value == category,
-                onSelected: (_) => onCategoryTapped(value),
+                onSelected: (_) {
+                  HapticFeedback.selectionClick();
+                  onCategoryTapped(value);
+                },
               );
             },
             separatorBuilder: (_, __) => const SizedBox(width: 8),
@@ -610,7 +628,10 @@ class _IncomeExtras extends StatelessWidget {
                 final value = suggestions[index];
                 return ActionChip(
                   label: Text(formatCurrency(value)),
-                  onPressed: () => onSuggestionTap(value),
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    onSuggestionTap(value);
+                  },
                 );
               },
               separatorBuilder: (_, __) => const SizedBox(width: 10),

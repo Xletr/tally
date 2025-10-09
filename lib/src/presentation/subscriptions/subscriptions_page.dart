@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
@@ -89,7 +90,10 @@ class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
                     ),
                     menuChildren: _SubscriptionSort.values.map((option) {
                       return MenuItemButton(
-                        onPressed: () => setState(() => _sort = option),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _sort = option);
+                        },
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -112,6 +116,7 @@ class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
                         icon: const Icon(Icons.filter_list_rounded),
                         label: Text(_sortLabel(_sort)),
                         onPressed: () {
+                          HapticFeedback.selectionClick();
                           if (controller.isOpen) {
                             controller.close();
                           } else {
@@ -301,8 +306,12 @@ class _SubscriptionCard extends ConsumerWidget {
               ),
           ],
         ),
-        onTap: () => _showSubscriptionEditor(context, ref, existing: template),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          _showSubscriptionEditor(context, ref, existing: template);
+        },
         onLongPress: () async {
+          HapticFeedback.lightImpact();
           final confirmed = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
@@ -323,6 +332,7 @@ class _SubscriptionCard extends ConsumerWidget {
             ),
           );
           if (confirmed == true) {
+            HapticFeedback.heavyImpact();
             await repository.deleteRecurringExpense(summary.template.id);
             messenger.showSnackBar(
               const SnackBar(content: Text('Subscription deleted')),
@@ -424,12 +434,18 @@ Future<void> _showSubscriptionEditor(
               SwitchListTile.adaptive(
                 value: autoAdd,
                 title: const Text('Auto-add to future months'),
-                onChanged: (value) => setState(() => autoAdd = value),
+                onChanged: (value) {
+                  HapticFeedback.selectionClick();
+                  setState(() => autoAdd = value);
+                },
               ),
               SwitchListTile.adaptive(
                 value: active,
                 title: const Text('Active'),
-                onChanged: (value) => setState(() => active = value),
+                onChanged: (value) {
+                  HapticFeedback.selectionClick();
+                  setState(() => active = value);
+                },
               ),
               const SizedBox(height: 16),
               Row(
@@ -437,6 +453,7 @@ Future<void> _showSubscriptionEditor(
                   if (existing != null)
                     TextButton.icon(
                       onPressed: () async {
+                        HapticFeedback.selectionClick();
                         final confirmed = await showDialog<bool>(
                           context: context,
                           builder: (context) => AlertDialog(

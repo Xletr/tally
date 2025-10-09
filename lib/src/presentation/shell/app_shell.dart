@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../add/add_page.dart';
@@ -40,6 +41,7 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (index == _index) {
       return;
     }
+    HapticFeedback.selectionClick();
     setState(() => _index = index);
     _controller.animateToPage(
       index,

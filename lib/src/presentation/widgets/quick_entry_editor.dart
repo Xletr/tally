@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/utils/formatters.dart';
 import '../../domain/entities/budget_settings.dart';
@@ -117,6 +118,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
   );
 
   void _addCategory(ExpenseCategory category) {
+    HapticFeedback.selectionClick();
     setState(() {
       _categories[category] = List<double>.from(
         widget.settings.categoryQuickEntryPresets[category] ??
@@ -137,6 +139,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
       );
       return;
     }
+    HapticFeedback.selectionClick();
     setState(() {
       _categories.remove(category);
       _iconCodes.remove(category);
@@ -174,7 +177,10 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
                 .map(
                   (icon) => InkWell(
                     borderRadius: BorderRadius.circular(16),
-                    onTap: () => Navigator.of(context).pop(icon.codePoint),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.of(context).pop(icon.codePoint);
+                    },
                     child: Card(child: Center(child: Icon(icon))),
                   ),
                 )
@@ -185,6 +191,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
     );
 
     if (selected != null) {
+      HapticFeedback.selectionClick();
       setState(() => _iconCodes[category] = selected);
     }
   }
@@ -195,6 +202,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
     final value = double.tryParse(controller.text);
     if (value == null || value <= 0) return;
 
+    HapticFeedback.selectionClick();
     setState(() {
       final list = _categories.putIfAbsent(category, () => <double>[]);
       list.add(value.abs());
@@ -206,6 +214,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
   void _addSavingsPreset() {
     final value = double.tryParse(_savingsController.text);
     if (value == null || value <= 0) return;
+    HapticFeedback.selectionClick();
     setState(() {
       _savingsPresets.add(value.abs());
       _savingsPresets = _savingsPresets.toSet().toList()..sort();
@@ -214,6 +223,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
   }
 
   void _removeSavingsPreset(double value) {
+    HapticFeedback.selectionClick();
     setState(() {
       _savingsPresets.remove(value);
     });
@@ -230,6 +240,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
       iconCodes: Map<ExpenseCategory, int>.from(_iconCodes),
       savingsPresets: _savingsPresets.toSet().toList()..sort(),
     );
+    HapticFeedback.mediumImpact();
     Navigator.of(context).pop(result);
   }
 
@@ -268,6 +279,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
                     tooltip: 'Add category',
                     icon: const Icon(Icons.add_rounded),
                     onPressed: () async {
+                      HapticFeedback.selectionClick();
                       final selected =
                           await showModalBottomSheet<ExpenseCategory>(
                             context: context,
@@ -282,8 +294,10 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
                                     ListTile(
                                       leading: Icon(_iconFor(category)),
                                       title: Text(category.label),
-                                      onTap: () =>
-                                          Navigator.of(context).pop(category),
+                                      onTap: () {
+                                        HapticFeedback.selectionClick();
+                                        Navigator.of(context).pop(category);
+                                      },
                                     ),
                                 ],
                               ),
@@ -334,7 +348,10 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
                                   IconButton(
                                     tooltip: 'Change icon',
                                     icon: const Icon(Icons.brush_rounded),
-                                    onPressed: () => _pickIcon(category),
+                                    onPressed: () {
+                                      HapticFeedback.selectionClick();
+                                      _pickIcon(category);
+                                    },
                                   ),
                                   if (activeCategories.length > 1)
                                     IconButton(
@@ -342,8 +359,9 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
                                       icon: const Icon(
                                         Icons.delete_outline_rounded,
                                       ),
-                                      onPressed: () =>
-                                          _removeCategory(category),
+                                      onPressed: () {
+                                        _removeCategory(category);
+                                      },
                                     ),
                                 ],
                               ),
@@ -356,6 +374,7 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
                                           (value) => InputChip(
                                             label: Text(formatCurrency(value)),
                                             onDeleted: () {
+                                              HapticFeedback.selectionClick();
                                               setState(() {
                                                 _categories[category]?.remove(
                                                   value,
@@ -419,8 +438,10 @@ class _QuickEntryEditorSheetState extends State<_QuickEntryEditorSheet> {
                               IconButton(
                                 tooltip: 'Change icon',
                                 icon: const Icon(Icons.brush_rounded),
-                                onPressed: () =>
-                                    _pickIcon(ExpenseCategory.savings),
+                                onPressed: () {
+                                  HapticFeedback.selectionClick();
+                                  _pickIcon(ExpenseCategory.savings);
+                                },
                               ),
                             ],
                           ),

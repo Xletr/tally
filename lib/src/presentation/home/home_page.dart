@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -679,8 +680,18 @@ class _TimelineTile extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       clipBehavior: Clip.antiAlias,
       child: ListTile(
-        onTap: tileOnTap,
-        onLongPress: tileOnTap,
+        onTap: tileOnTap == null
+            ? null
+            : () {
+                HapticFeedback.selectionClick();
+                tileOnTap();
+              },
+        onLongPress: tileOnTap == null
+            ? null
+            : () {
+                HapticFeedback.mediumImpact();
+                tileOnTap();
+              },
         tileColor: isSavings
             ? colorScheme.tertiaryContainer.withValues(alpha: 0.25)
             : null,
@@ -707,6 +718,7 @@ class _HistoryButton extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     return InkWell(
       onTap: onTap,
+      onTapDown: (_) => HapticFeedback.selectionClick(),
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),

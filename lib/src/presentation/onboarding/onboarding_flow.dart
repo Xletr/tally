@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/utils/formatters.dart';
@@ -169,6 +170,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
 
   void _next() {
     if (_index < 3) {
+      HapticFeedback.selectionClick();
       setState(() => _index += 1);
       _pageController.animateToPage(
         _index,
@@ -180,6 +182,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
 
   void _back() {
     if (_index > 0) {
+      HapticFeedback.selectionClick();
       setState(() => _index -= 1);
       _pageController.animateToPage(
         _index,
@@ -245,6 +248,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       ),
     );
 
+    HapticFeedback.mediumImpact();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AppShell()),
@@ -276,7 +280,13 @@ class _StepperHeader extends StatelessWidget {
             style: theme.textTheme.titleMedium,
           ),
           const Spacer(),
-          TextButton(onPressed: onSkip, child: const Text('Skip')),
+          TextButton(
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              onSkip();
+            },
+            child: const Text('Skip'),
+          ),
         ],
       ),
     );
@@ -670,11 +680,14 @@ class _NotificationStep extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          SwitchListTile.adaptive(
-            value: notificationsEnabled,
-            title: const Text('Enable notifications'),
-            onChanged: onToggleNotifications,
-          ),
+      SwitchListTile.adaptive(
+        value: notificationsEnabled,
+        title: const Text('Enable notifications'),
+        onChanged: (value) {
+          HapticFeedback.selectionClick();
+          onToggleNotifications(value);
+        },
+      ),
           _ReminderTile(
             title: 'Mid-month check-in',
             enabled: midReminderEnabled,
@@ -739,15 +752,20 @@ class _ReminderTile extends StatelessWidget {
       value: enabled,
       title: Text(title),
       subtitle: Text('Remind me at $timeLabel'),
-      onChanged: onToggle,
+      onChanged: (value) {
+        HapticFeedback.selectionClick();
+        onToggle(value);
+      },
       secondary: IconButton(
         icon: const Icon(Icons.schedule_rounded),
         onPressed: () async {
+          HapticFeedback.selectionClick();
           final picked = await showTimePicker(
             context: context,
             initialTime: timeOfDay,
           );
           if (picked != null) {
+            HapticFeedback.selectionClick();
             onPickTime(ReminderTime.fromTimeOfDay(picked));
           }
         },
