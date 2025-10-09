@@ -23,17 +23,27 @@ class SubscriptionsPage extends ConsumerWidget {
   }
 }
 
-class _SubscriptionsView extends ConsumerWidget {
+enum _SubscriptionSort { nextCharge, amountHigh, name }
+
+class _SubscriptionsView extends ConsumerStatefulWidget {
   const _SubscriptionsView({required this.summaries});
 
   final List<SubscriptionSummary> summaries;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SubscriptionsView> createState() => _SubscriptionsViewState();
+}
+
+class _SubscriptionsViewState extends ConsumerState<_SubscriptionsView> {
+  _SubscriptionSort _sort = _SubscriptionSort.nextCharge;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final totalMonthly = summaries
+    final totalMonthly = widget.summaries
         .where((summary) => summary.template.active)
         .fold<double>(0, (sum, summary) => sum + summary.template.amount);
+    final sortedSummaries = _sortedSummaries();
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showSubscriptionEditor(context, ref),
@@ -64,32 +74,128 @@ class _SubscriptionsView extends ConsumerWidget {
                     ],
                   ),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.refresh_rounded),
-                    tooltip: 'Refresh',
-                    onPressed: () =>
-                        ref.invalidate(subscriptionSummariesProvider),
+                  DropdownButtonHideUnderline(
+                    child: DropdownButton<_SubscriptionSort>(
+                      value: _sort,
+                      alignment: Alignment.centerRight,
+                      icon: const Icon(Icons.arrow_drop_down_rounded),
+                      borderRadius: BorderRadius.circular(16),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _sort = value);
+                      },
+                      items: _SubscriptionSort.values
+                          .map(
+                            (option) => DropdownMenuItem<_SubscriptionSort>(
+                              value: option,
+                              child: Text(_sortLabel(option)),
+                            ),
+                          )
+                          .toList(),
+                      selectedItemBuilder: (context) =>
+                          _SubscriptionSort.values.map((option) {
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.sort_rounded, size: 18),
+                            const SizedBox(width: 6),
+                            Text(_sortLabel(option)),
+                          ],
+                        );
+                      }).toList(),
+                    ),
                   ),
                 ],
               ),
             ),
             Expanded(
-              child: summaries.isEmpty
+              child: widget.summaries.isEmpty
                   ? const _EmptyState()
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
                       itemBuilder: (context, index) {
-                        final summary = summaries[index];
+                        final summary = sortedSummaries[index];
                         return _SubscriptionCard(summary: summary);
                       },
                       separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemCount: summaries.length,
+                      itemCount: sortedSummaries.length,
                     ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  List<SubscriptionSummary> _sortedSummaries() {
+    final list = [...widget.summaries];
+    switch (_sort) {
+      case _SubscriptionSort.nextCharge:
+        list.sort((a, b) {
+          final aActive = a.template.active ? 0 : 1;
+          final bActive = b.template.active ? 0 : 1;
+          if (aActive != bActive) {
+            return aActive.compareTo(bActive);
+          }
+          final aDate = _nextChargeDate(a.template);
+          final bDate = _nextChargeDate(b.template);
+          final compare = aDate.compareTo(bDate);
+          if (compare != 0) return compare;
+          return _displayName(a.template).compareTo(_displayName(b.template));
+        });
+        break;
+      case _SubscriptionSort.amountHigh:
+        list.sort((a, b) {
+          final aActive = a.template.active ? 0 : 1;
+          final bActive = b.template.active ? 0 : 1;
+          if (aActive != bActive) {
+            return aActive.compareTo(bActive);
+          }
+          final compare = b.template.amount.compareTo(a.template.amount);
+          if (compare != 0) return compare;
+          return _displayName(a.template).compareTo(_displayName(b.template));
+        });
+        break;
+      case _SubscriptionSort.name:
+        list.sort(
+          (a, b) =>
+              _displayName(a.template).compareTo(_displayName(b.template)),
+        );
+        break;
+    }
+    return list;
+  }
+
+  String _sortLabel(_SubscriptionSort sort) {
+    switch (sort) {
+      case _SubscriptionSort.nextCharge:
+        return 'Next charge';
+      case _SubscriptionSort.amountHigh:
+        return 'Highest cost';
+      case _SubscriptionSort.name:
+        return 'Name A-Z';
+    }
+  }
+
+  DateTime _nextChargeDate(RecurringExpense template) {
+    final now = DateTime.now();
+    final day = template.dayOfMonth.clamp(1, 28);
+    final currentMonthDate = DateTime(now.year, now.month, day);
+    if (currentMonthDate.isAfter(now) || _isSameDay(currentMonthDate, now)) {
+      return currentMonthDate;
+    }
+    final nextMonth = DateTime(now.year, now.month + 1, 1);
+    final lastDay = DateTime(nextMonth.year, nextMonth.month + 1, 0).day;
+    final normalizedDay = day.clamp(1, lastDay);
+    return DateTime(nextMonth.year, nextMonth.month, normalizedDay);
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  String _displayName(RecurringExpense template) {
+    return template.label.isEmpty ? 'Subscription' : template.label;
   }
 }
 

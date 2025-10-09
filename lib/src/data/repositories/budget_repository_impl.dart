@@ -257,23 +257,13 @@ class BudgetRepositoryImpl implements BudgetRepository {
   Future<void> upsertRecurringExpense(RecurringExpense expense) async {
     final model = RecurringExpenseModel.fromDomain(expense);
     await _bootstrap.recurringBox.put(model.id, model);
-    final now = _now();
-    final currentMonthId = buildMonthId(DateTime(now.year, now.month));
-    final currentMonth = _bootstrap.monthsBox.get(currentMonthId);
-    if (currentMonth != null) {
-      await _rebuildRecurringAggregatesForMonth(currentMonth);
-    }
+    await _reseedRecurringCharges(model);
   }
 
   @override
   Future<void> deleteRecurringExpense(String id) async {
     await _bootstrap.recurringBox.delete(id);
-    final now = _now();
-    final currentMonthId = buildMonthId(DateTime(now.year, now.month));
-    final currentMonth = _bootstrap.monthsBox.get(currentMonthId);
-    if (currentMonth != null) {
-      await _rebuildRecurringAggregatesForMonth(currentMonth);
-    }
+    await _reseedRecurringCharges();
   }
 
   @override
@@ -662,57 +652,36 @@ class BudgetRepositoryImpl implements BudgetRepository {
         })
         .toList();
 
-    // Remove legacy per-template entries.
-    final legacyEntries = _bootstrap.expensesBox.values.where(
-      (expense) =>
-          expense.monthId == month.id &&
-          expense.isRecurring &&
-          expense.recurringTemplateId != null,
-    );
-    for (final legacy in legacyEntries) {
-      await _bootstrap.expensesBox.delete(legacy.id);
-    }
+    final expectedIds = <String>{};
 
-    final grouped = <int, List<RecurringExpenseModel>>{};
     for (final template in templates) {
       final chargeDate = _subscriptionChargeDateForMonth(template, month);
       if (chargeDate == null) continue;
-      final day = chargeDate.day;
-      grouped.putIfAbsent(day, () => []).add(template);
-    }
 
-    final expectedIds = <String>{};
-
-    for (final entry in grouped.entries) {
-      final day = entry.key;
-      final items = entry.value;
-      final id = _aggregateExpenseId(month.id, day);
+      final id = _subscriptionExpenseId(template.id, month.id);
       expectedIds.add(id);
-
-      final amount = items.fold<double>(0, (sum, item) => sum + item.amount);
-      final note = _buildSubscriptionNote(items);
-      final chargeDate = DateTime(month.year, month.month, day);
+      final note = _subscriptionNote(template);
 
       final existing = _bootstrap.expensesBox.get(id);
       if (existing != null) {
-        final updated = existing
-          ..amount = amount
+        existing
+          ..amount = template.amount
           ..note = note
           ..date = chargeDate
           ..category = ExpenseCategory.subscriptions
           ..isRecurring = true
-          ..recurringTemplateId = null
+          ..recurringTemplateId = template.id
           ..updatedAt = _now();
-        await updated.save();
+        await existing.save();
       } else {
         final model = ExpenseEntryModel(
           id: id,
           monthId: month.id,
           category: ExpenseCategory.subscriptions,
-          amount: amount,
+          amount: template.amount,
           date: chargeDate,
           isRecurring: true,
-          recurringTemplateId: null,
+          recurringTemplateId: template.id,
           note: note,
           createdAt: _now(),
           updatedAt: null,
@@ -721,18 +690,27 @@ class BudgetRepositoryImpl implements BudgetRepository {
       }
     }
 
-    // Remove aggregates that are no longer needed.
-    final existingAggregates = _bootstrap.expensesBox.values.where(
+    final recurringEntries = _bootstrap.expensesBox.values.where(
+      (expense) =>
+          expense.monthId == month.id &&
+          expense.isRecurring &&
+          expense.recurringTemplateId != null,
+    );
+    for (final entry in recurringEntries) {
+      if (!expectedIds.contains(entry.id)) {
+        await _bootstrap.expensesBox.delete(entry.id);
+      }
+    }
+
+    final legacyAggregates = _bootstrap.expensesBox.values.where(
       (expense) =>
           expense.monthId == month.id &&
           expense.isRecurring &&
           expense.recurringTemplateId == null &&
           expense.id.startsWith('recurring-${month.id}-'),
     );
-    for (final aggregate in existingAggregates) {
-      if (!expectedIds.contains(aggregate.id)) {
-        await _bootstrap.expensesBox.delete(aggregate.id);
-      }
+    for (final legacy in legacyAggregates) {
+      await _bootstrap.expensesBox.delete(legacy.id);
     }
   }
 
@@ -749,24 +727,37 @@ class BudgetRepositoryImpl implements BudgetRepository {
       return null;
     }
     final lastDay = DateTime(month.year, month.month + 1, 0).day;
-    var day = template.dayOfMonth.clamp(1, lastDay);
-    if (creationMonth == monthDate && template.createdAt.day > day) {
-      day = template.createdAt.day.clamp(1, lastDay);
-    }
+    final day = template.dayOfMonth.clamp(1, lastDay);
     return DateTime(month.year, month.month, day);
   }
 
-  String _aggregateExpenseId(String monthId, int day) =>
-      'recurring-$monthId-$day';
+  String _subscriptionExpenseId(String templateId, String monthId) =>
+      'recurring-$templateId-$monthId';
 
-  String _buildSubscriptionNote(List<RecurringExpenseModel> templates) {
-    final parts = templates
-        .map(
-          (template) =>
-              '${template.label} (\$${template.amount.toStringAsFixed(2)})',
-        )
-        .toList();
-    return 'Includes: ${parts.join(', ')}';
+  String _subscriptionNote(RecurringExpenseModel template) {
+    final label = template.label.isEmpty ? 'Subscription' : template.label;
+    final detail = template.note;
+    if (detail == null || detail.isEmpty) {
+      return label;
+    }
+    return '$label - $detail';
+  }
+
+  Future<void> _reseedRecurringCharges([RecurringExpenseModel? focus]) async {
+    if (_bootstrap.monthsBox.isEmpty) {
+      return;
+    }
+    final months = _sortedMonthModelsAsc();
+    final creationCutoff = focus != null
+        ? DateTime(focus.createdAt.year, focus.createdAt.month)
+        : null;
+    for (final month in months) {
+      final monthDate = DateTime(month.year, month.month);
+      if (creationCutoff != null && monthDate.isBefore(creationCutoff)) {
+        continue;
+      }
+      await _rebuildRecurringAggregatesForMonth(month);
+    }
   }
 
   Future<void> _seedAllowanceIncome(

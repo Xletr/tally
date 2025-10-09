@@ -878,14 +878,14 @@ class _TimelineEntry {
   }
 
   factory _TimelineEntry.fromExpense(ExpenseEntry expense) {
-    final isSubscriptionAggregate =
-        expense.isRecurring &&
-        expense.recurringTemplateId == null &&
-        expense.id.startsWith('recurring-');
+    final isSubscriptionCharge =
+        expense.isRecurring && expense.recurringTemplateId != null;
     final title = expense.note?.isNotEmpty == true
         ? expense.note!
-        : expense.category.label;
-    final iconData = isSubscriptionAggregate
+        : isSubscriptionCharge
+            ? 'Subscription'
+            : expense.category.label;
+    final iconData = isSubscriptionCharge
         ? Icons.subscriptions_outlined
         : categoryIcon(expense.category);
     return _TimelineEntry._(
@@ -895,7 +895,7 @@ class _TimelineEntry {
       amount: expense.amount,
       date: expense.date,
       icon: iconData,
-      sortPriority: isSubscriptionAggregate ? 280 : 200,
+      sortPriority: isSubscriptionCharge ? 280 : 200,
       expense: expense,
     );
   }
